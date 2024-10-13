@@ -1,0 +1,170 @@
+---
+title: "EC 510 Project I"
+author: "William Grossman"
+date: "2024-04-08"
+output: pdf_document
+---
+\usepackage{setspace} \doublespacing 
+```{r setup, include=FALSE}
+setwd("C:/Users/justg/Dropbox (University of Oregon)")
+
+# Load in data
+atlas <- read.csv("atlas.csv")
+
+library(Hmisc)
+library(sandwich)
+library(lmtest)
+library(ggplot2)
+library(tidyverse)
+library(stargazer)
+
+attach(atlas)
+
+# subset observations to Oregon
+oregon <- subset(atlas,state == 41)
+
+# subset observations to Jackson County
+jackson <- subset(atlas,state == 41 & county == 029)
+```
+
+Using the opportunity Atlas, developed by Raj Chetty and his colleagues, I input the address for my childhood home in Medford, Oregon. Adjusting the tools that the website offers I selected individual income for low income children and switched the scale to compare averages for other children born to low income families. The Medford area ranked in the 35th percentile for low income children's income at age 35, however, the neighborhood I grew up in North Medford ranked better at the 44th percentile. Neighborhoods in West Medford ranked much worse at the 7th and 3rd percentile, while neighborhoods in East Medford had a significantly better rank at the 78th percentile. I am not surprised by this stark contrast; growing up in Medford there was a stereotype that neighborhoods West of the I-5 had more crime and struggling families, while also having a lack of funding for the schools in the area. However, I find it interesting that the incarceration rates for children from low income families in West Medford is significantly lower than North Medford (1.4% to 2.9%), aside from a specific neighborhood in West Medford where it is similar to North Medford (2.8%). Although when I switch parent income to middle and high income families, there is again a stark contrast between West Medford and East/ North Medford. Generally I would expect areas that produce lower income adults to also produce higher incarceration rates for those adults, but as the map has shown that is not always the case when only looking at low income families.
+
+\centering
+\textbf{Figure 1: Individual Income at Age 35 for Children from Low Income Families in Medford, Oregon} 
+
+\includegraphics[width=0.7\linewidth]{Opportunity Map.png}
+
+*Note*: This figure shows individual (not including a spouse) income at age 35 for low income children who were raised in the Medford area. This image was retrieved from [www.opportunity-atlas.org](www.opportunity-atlas.org) by searching for my childhood neighborhood and then downloading the image. The scale (different color shades) are based on other children born to low income families across the U.S.
+
+
+
+```{r, warning=FALSE, include=FALSE, echo=FALSE}
+# Print out household income at age 31-37 for children born into low income families in my census tract
+kfr_pooled_p25[state == 41 & county == 029 & tract == 000406]
+
+#Report weighted means for USA
+wtd.mean(kfr_pooled_p25, count_pooled)
+
+#Report weighted means for Oregon
+wtd.mean(oregon$kfr_pooled_p25, oregon$count_pooled)
+
+#Report weighted means for Jackson county
+wtd.mean(jackson$kfr_pooled_p25, jackson$count_pooled)
+```
+
+
+
+Let's dig into some of the data from the opportunity atlas to compare how upward mobility in my childhood neighborhood compares to the national average. I will be looking at children born into families at the 25th percentile of the income distribution in both cases (I will be using household income instead of individual income from this point on). The average annual household income for children born in the 25th percentile from my childhood census tract is \$36,366 at age 35 while the US weighted average (weighted using number of children) is \$34,311 and Oregon's weighted average is \$33,757. So, children born into the 25th percentile in my census tract had an easier time climbing the income ladder than the average US and Oregon child born into similar financial situations. This shows that being born into different areas, even neighborhoods, can have a significant impact on the mobility of children born into low income families.
+
+
+
+```{r, warning=FALSE, include=FALSE, echo=FALSE}
+# Print out household income at age 31-37 for children born into high income families in my census tract
+kfr_pooled_p75[state == 41 & county == 029 & tract == 000406]
+
+#Report weighted means for USA
+wtd.mean(kfr_pooled_p75, count_pooled)
+
+#Report weighted means for Oregon
+wtd.mean(oregon$kfr_pooled_p75, oregon$count_pooled)
+
+#Report weighted means for Jackson county
+wtd.mean(jackson$kfr_pooled_p75, jackson$count_pooled)
+```
+
+Upward mobility is important and provides the chance for children to have a better future than what they were born into, but what can the data tell us about downward mobility and how my neighborhood compares to US and Oregon weighted averages? I start by looking at the average income of children born into high income families (75th percentile) from my census tract, then compare this to weighted averages from the whole U.S. and Oregon. I find that the average annual household income for this group from my census tract is \$50,779, which is slightly worse than the US weighted average of \$51,284 and slightly better than the Oregon weighted average of \$49,878.
+
+
+```{r, warning=FALSE, include=FALSE, echo=FALSE}
+# Print out household income at age 31-37 for children born into very high income families in my census tract
+kfr_pooled_p100[state == 41 & county == 029 & tract == 000406]
+
+#Report weighted means for USA
+wtd.mean(kfr_pooled_p100, count_pooled)
+
+#Report weighted means for Oregon
+wtd.mean(oregon$kfr_pooled_p100, oregon$count_pooled)
+
+#Report weighted means for Jackson county
+wtd.mean(jackson$kfr_pooled_p100, jackson$count_pooled)
+```
+
+Repeating the same process for children born into very high income homes (100th percentile) I find that my census tract underperforms with an average annual household income of \$65,114 while the US and Oregon weighted averages are \$69,218 and \$66,776 respectively. So, my home county seems to outperform the rest of the country when it comes to low income children climbing the income ladder, but higher income children in Jackson county don't do as well as other high income children in the U.S. but still perform better than their low income counterparts.
+
+
+
+```{r, warning=FALSE, include=FALSE, echo=FALSE}
+#Run regression with homoskedasticity-only standard errors
+m1 <- lm(kfr_pooled_p75 ~ kfr_pooled_p25, data = jackson)
+summary(m1)
+```
+
+
+Next, I will at look data from my home county and see if low income children earn higher incomes as high income children earn more. In other words, I will use linear regression to look for a relationship between low income children's earnings and high income children's earnings. I expect to see a positive relationship between these two variables as I believe a census tract will help low income and high income children alike, I would find it strange if an area helped low income children rise in the income ladder while also hindering high income children.
+
+```{r, results='asis', warning=FALSE, echo=FALSE, error=FALSE, message=FALSE}
+# Make table with regression results
+stargazer(m1, header = FALSE, type = 'latex', 
+          title = 'Low-Income and High-Income Correlation', 
+          style = 'AER',
+          column.labels = "75th Percentile Children", 
+          covariate.labels = c('25th Percentile Childre', 'Base Earnings'),
+          dep.var.labels.include = FALSE)
+
+# Draw scatter plot with linear fit line
+ggplot(data = jackson, aes(x = kfr_pooled_p25, y = kfr_pooled_p75, color = ifelse(tract == 406, "My Census Tract", "Jackson County"))) + 
+  geom_point() +
+  geom_smooth(method = "lm", se = TRUE) +
+  labs(title = "Earnings of Low and High Income Children by Census Tract",
+       x = "25th Percentile Earnings",
+       y = "75th Percentile Earnings",
+       color = "Region") +  # Custom legend title
+  theme_bw()
+```
+
+
+The results from the regression show that there is a positive correlation between the income of children born in the 25th percentile and those born in the 75th percentile. A \$1 increase in the earnings of low income children is correlated with a \$0.46 increase in the earnings of high income children. This means that areas where low income children do well and earn higher incomes, high income children also tend to do well.
+
+
+
+
+
+
+```{r}
+#Method 1
+##Standardize variables
+jackson$pooled_25_std <- (jackson$kfr_pooled_p25 -
+mean(jackson$kfr_pooled_p25))/sd(jackson$kfr_pooled_p25)
+
+jackson$pooled_75_std <- (jackson$kfr_pooled_p75 -
+mean(jackson$kfr_pooled_p75))/sd(jackson$kfr_pooled_p75)
+
+#Report correlation coefficients
+#Using a regression
+mod2 <- lm(pooled_75_std ~ pooled_25_std, data = jackson)
+summary(mod2)
+coeftest(mod2, vcov = vcovHC(mod2, type="HC1"))
+```
+
+```{r}
+mixed_signs <- (jackson$pooled_25_std > 0 & jackson$pooled_75_std < 0) | (jackson$pooled_25_std < 0 & jackson$pooled_75_std > 0)
+
+# Counting the number of times this condition is true
+count_mixed_signs <- sum(mixed_signs)
+
+# Print the count
+print(count_mixed_signs)
+```
+
+
+
+
+```{r}
+# subset observations to LA County
+la <- subset(atlas,state == 06 & county == 037)
+
+#Run regression with homoskedasticity-only standard errors now looking at race
+mbw <- lm(kfr_black_p75 ~ kfr_white_p25, data = la)
+summary(mbw)
+```
+

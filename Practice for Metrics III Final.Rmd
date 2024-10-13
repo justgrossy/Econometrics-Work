@@ -1,0 +1,400 @@
+---
+title: "Take-Home-Final"
+author: "Will Grossman"
+date: "2024-06-13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+setwd("C:/Users/justg/Dropbox (University of Oregon)")
+
+# Load Packages
+library(pacman)
+p_load(tidyverse, magrittr, skimr, janitor, scales, car, caret, randomForest, Metrics, corrplot)
+library(tidymodels)
+library(ranger)
+library(glmnet)
+
+# Read in data
+train_df <- read.csv("Project-000-files/train.csv")
+test_df <- read.csv("Project-000-files/test.csv")
+```
+
+
+
+```{r data cleaning, echo=TRUE, results='hide'}
+# Clean variable names
+clean_names(train_df, case = 'big_camel')
+clean_names(test_df, case = 'big_camel')
+
+# Replace sale_price with its log
+train_df <- train_df %>% mutate(SalePrice = log(SalePrice))
+
+# Add empty sale_price to test_df
+test_df$sale_price = NA
+
+# Skim data
+skim(test_df)
+skim(train_df)
+
+
+```
+
+
+
+```{r visualizations, message=FALSE, error=FALSE}
+# Make scatterplot
+scatterplot(SalePrice ~ X1stFlrSF, data=train_df,  xlab="Square Footage Floor 1", ylab="Sale Price", grid=FALSE, col="black", smooth=TRUE)
+
+numericVars <- which(sapply(train_df, is.numeric)) #index vector numeric variables
+numericVarNames <- names(numericVars) #saving names vector for use later on
+cat('There are', length(numericVars), 'numeric variables')
+    
+all_numVar <- train_df[, numericVars]
+cor_numVar <- cor(all_numVar, use="pairwise.complete.obs") #correlations of all numeric variables
+
+#sort on decreasing correlations with SalePrice
+cor_sorted <- as.matrix(sort(cor_numVar[,'SalePrice'], decreasing = TRUE))
+#select only high corelations
+CorHigh <- names(which(apply(cor_sorted, 1, function(x) abs(x)>0.5)))
+cor_numVar <- cor_numVar[CorHigh, CorHigh]
+
+corrplot.mixed(cor_numVar, tl.col="black", tl.pos = "lt")
+
+
+ggplot(data=train_df[!is.na(train_df$SalePrice),], aes(x=factor(OverallQual), y=SalePrice))+
+        geom_boxplot(col='blue') + labs(x='Overall Quality') +
+        scale_y_continuous(breaks= seq(0, 800000, by=100000), labels = comma)
+
+```
+
+The scatterplot visualizes the relationship between sale price and first floor square footage which is intuitively what I would expect to have a large impact on sale price. It shows that there is a clear positive relationship between sale price and first floor square footage but there are a few outliers with a lot of square feet. The correlation matrix selects the numeric variables with the highest correlation with sale price and the order of correlation strength. These features should certainly be included in the model that we construct. Finally, since overall quality had such a strong correlation I plot the data and use box plots at each level of overall quality to see if outliers are driving the relationship. It seems to show that there is a clear upward trend in the data even before the very high quality houses, although the variability does increase at higher quality levels.
+
+
+
+```{r Linear regression, warning=FALSE, error=FALSE}
+# Define a linear regression model
+model_reg =
+  linear_reg() |>
+  set_mode('regression') |>
+  set_engine('lm')
+# Define a simple recipe
+recipe01 =
+  recipe(SalePrice ~ OverallQual + GrLivArea + GarageArea + TotalBsmtSF + X1stFlrSF + FullBath +     
+  TotRmsAbvGrd + YearBuilt, data = train_df) |>
+# Simple imputations
+  step_impute_bag(all_numeric_predictors()) |>
+  step_impute_bag(all_nominal_predictors()) |>
+# Dummies
+  step_dummy(all_nominal_predictors()) |>
+# Drop near-zero-variance variables and linear combinations
+  step_nzv(all_numeric_predictors()) |>
+  step_lincomb(all_numeric_predictors())
+# Define the workflow
+  wf_reg01 =
+  workflow() |>
+  add_model(model_reg) |>
+  add_recipe(recipe01)
+  
+  
+# Set seed (for repeatability)
+set.seed(1789)
+# 5-fold CV on the training dataset
+credit_cv = train_df %>% vfold_cv(v = 5)
+# Fit!
+fit_reg01 =
+  wf_reg01 |>
+  fit_resamples(resamples = credit_cv, metrics = metric_set(rmse))
+
+# Summarize CV results
+fit_reg01 |> collect_metrics(summarize = TRUE)
+
+
+# Extract the best performing model based on RMSE
+best_rmse <- select_best(fit_reg01, metric = "rmse")
+
+# Finalize the workflow with the best parameters
+final_wf_reg01 <- finalize_workflow(wf_reg01, best_rmse)
+
+
+# Fit the final model on the entire training data
+final_fit_reg01 <- final_wf_reg01 |>
+  fit(data = train_df)
+
+# Make predictions on the test dataset
+pred_linear <- predict(final_fit_reg01, new_data = test_df)
+
+
+# Rename the .pred column to SalePrice
+pred_linear <- pred_linear %>% rename(SalePrice = .pred)
+
+
+# Check that the number of predictions is the same as the number of rows in 'test_df'
+pred_linear %>% nrow()
+test_df %>% nrow()
+
+# Create the submission dataset
+submit_linear = data.frame(
+    Id = test_df$Id,
+    SalePrice = pred_linear
+)
+
+# Reverse the log transformation
+submit_linear$SalePrice <- exp(submit_linear$SalePrice)
+
+# Save the datset
+write_csv(x = submit_linear, file = "Linear_Final2.csv")
+```
+
+Using a bagging approach for imputation resulted in a sizable improvement on my models rmse compared to the first time I did this exercise. My rmse was nearly cut in half after the more sophisticated imputation method. My score on kaggle was a 0.1715 and does not beat my old rf model but does much better than the old OLS. Better imputation makes a big difference because it can more accurately estimate the missing data points using all of the other data points that we have. Just as we are predicting sale price based on multiple correlated features, we can do the same for missing data points by taking advantage of all the other features of the house that we do know.
+
+
+
+
+
+```{r Lasso regression, warning=FALSE, error=FALSE}
+
+
+# Update the existing recipe with normalization
+recipe_lasso =
+  recipe(SalePrice ~ ., data = train_df) |>
+  # Define the role of 'id'
+  update_role(Id, new_role = 'ID') |>
+  # Try to take care of categorical issues
+  step_string2factor(all_string_predictors()) |>
+  # Imputations
+  step_impute_bag(all_numeric_predictors()) |>
+  step_impute_mode(all_nominal_predictors()) |>
+  # Add quadratic terms
+  step_poly(all_numeric_predictors(), degree = 2) |>
+  # Dummies
+  step_zv(all_nominal_predictors()) |>
+  step_dummy(all_nominal_predictors()) |>
+  # Normalize variables
+  step_normalize(all_numeric_predictors()) |>
+  # Drop near-zero-variance variables and linear combinations
+  step_corr(all_numeric_predictors(), threshold = 0.9) |>
+  step_nzv(all_numeric_predictors()) |>
+  step_lincomb(all_numeric_predictors()) |>
+  step_zv(all_numeric_predictors())
+
+
+# Make Lasso model 
+model_lasso =
+  linear_reg(penalty = tune(), mixture = 1) |>
+  set_mode('regression') |>
+  set_engine('glmnet')
+
+# Workflow
+wf_lasso =
+  workflow() |>
+  add_model(model_lasso) |>
+  add_recipe(recipe_lasso)
+
+# Fit!
+fit_lasso =
+  wf_lasso |>
+  tune_grid(
+    resamples = credit_cv,
+    metrics = metric_set(rmse),
+    grid = grid_regular(penalty(), levels = 50)
+  )
+# Show RMSE of 10 best models
+fit_lasso |> show_best(metric = 'rmse', n = 10)
+
+
+# Extract the best model based on RMSE
+best_lasso <- fit_lasso |> select_best(metric = "rmse")
+
+# Finalize the workflow with the best parameters
+final_wf_lasso <- wf_lasso |> finalize_workflow(best_lasso)
+
+# Fit the final model on the entire training data
+final_fit <- final_wf_lasso |> fit(data = train_df)
+
+# Extract the model from the final fit
+lasso_model <- final_fit |> extract_fit_parsnip() |> tidy()
+
+# View the coefficients
+lasso_model
+
+
+
+
+
+# Extract the best performing model based on RMSE
+best_rmse_lasso <- select_best(fit_lasso, metric = "rmse")
+
+# Finalize the workflow with the best parameters
+final_wf_lasso <- finalize_workflow(wf_lasso, best_rmse_lasso)
+
+
+# Fit the final model on the entire training data
+final_fit_lasso <- final_wf_lasso |>
+  fit(data = train_df)
+
+# Make predictions on the test dataset
+pred_lasso <- predict(final_fit_lasso, new_data = test_df)
+
+
+# Rename the .pred column to SalePrice
+pred_lasso <- pred_lasso %>% rename(SalePrice = .pred)
+
+
+
+# Check that the number of predictions is the same as the number of rows in 'test_df'
+pred_lasso %>% nrow()
+test_df %>% nrow()
+
+# Create the submission dataset
+submit_lasso = data.frame(
+    Id = test_df$Id,
+    SalePrice = pred_lasso
+)
+
+# Reverse the log transformation
+submit_lasso$SalePrice <- exp(submit_lasso$SalePrice)
+
+# Save the datset
+write_csv(x = submit_lasso, file = "Lasso_Final.csv")
+```
+
+
+The best lasso model did improve on my linear model's score with an rmse of 0.124. Additionally, the best lasso model did select the same variables I had included in my linear model, but included polynomial transformations of those same variables and added additional variables that I did not have previously as well. This would suggest that those variables do a good job of explaining the changes in sales price from one house to another. Since lasso can shrink coefficients that don't have an impact to zero, we can me some what confident that the coefficients that it does include do have an impact on the outcome variable.
+
+
+
+
+
+```{r Random forest, error=FALSE, message=FALSE}
+
+
+# Define the model for regression
+model_forest <- rand_forest(
+  mode = 'regression',
+  mtry = tune(),
+  trees = 50,
+  min_n = tune()
+) %>%
+  set_engine(engine = 'ranger', splitrule = 'variance')
+
+# Define the recipe with the specific steps and variable names
+recipe_forest <- recipe(SalePrice ~ ., data = train_df) %>%
+  # Define the role of 'Id'
+  update_role(Id, new_role = 'ID') %>%
+  # Handle categorical issues
+  step_string2factor(all_string_predictors()) %>%
+  # Imputations
+  step_impute_bag(all_numeric_predictors()) %>%
+  step_impute_mode(all_nominal_predictors()) %>%
+  # Dummies
+  step_zv(all_nominal_predictors()) %>%
+  step_dummy(all_nominal_predictors()) %>%
+  # Normalize variables
+  step_normalize(all_numeric_predictors()) %>%
+  # Drop near-zero-variance variables and linear combinations
+  step_corr(all_numeric_predictors(), threshold = 0.9) %>%
+  step_nzv(all_numeric_predictors()) %>%
+  step_lincomb(all_numeric_predictors()) %>%
+  step_zv(all_numeric_predictors())
+
+# Create the workflow
+wf_forest <- workflow() %>%
+  add_model(model_forest) %>%
+  add_recipe(recipe_forest)
+
+# Tune the model
+tune_forest <- tune_grid(
+  wf_forest,
+  resamples = credit_cv,
+  grid = grid_regular(mtry(range = c(1, 6)), min_n(), levels = 4),
+  metrics = metric_set(rmse)
+)
+
+# Show the best results based on RMSE
+tune_forest %>%
+  show_best(metric = 'rmse', n = 10)
+
+# Define a new recipe with KNN imputation
+recipe_forest_knn <- recipe(SalePrice ~ ., data = train_df) %>%
+  # Define the role of 'Id'
+  update_role(Id, new_role = 'ID') %>%
+  # Handle categorical issues
+  step_string2factor(all_string_predictors()) %>%
+  # Imputations
+  step_impute_knn(all_predictors()) %>%
+  # Add quadratic terms
+  step_poly(all_numeric_predictors(), degree = 2) %>%
+  # Dummies
+  step_zv(all_nominal_predictors()) %>%
+  step_dummy(all_nominal_predictors()) %>%
+  # Normalize variables
+  step_normalize(all_numeric_predictors()) %>%
+  # Drop near-zero-variance variables and linear combinations
+  step_corr(all_numeric_predictors(), threshold = 0.9) %>%
+  step_nzv(all_numeric_predictors()) %>%
+  step_lincomb(all_numeric_predictors()) %>%
+  step_zv(all_numeric_predictors())
+
+# Create the new workflow with KNN imputation
+wf_forest_knn <- workflow() %>%
+  add_model(model_forest) %>%
+  add_recipe(recipe_forest_knn)
+
+# Tune the model again with the new workflow
+tune_forest_knn <- tune_grid(
+  wf_forest_knn,
+  resamples = credit_cv,
+  grid = grid_regular(mtry(range = c(1, 6)), min_n(), levels = 4),
+  metrics = metric_set(rmse)
+)
+
+# Fit the random forest model and tune
+fit_forest <- tune_grid(
+  wf_forest,
+  resamples = credit_cv,
+  metrics = metric_set(rmse),
+  grid = grid_regular(mtry(range = c(1, 6)), min_n(), levels = 4)
+)
+
+# Show RMSE of 10 best models
+fit_forest %>% show_best(metric = 'rmse', n = 10)
+
+# Extract the best performing model based on RMSE
+best_rmse_forest <- select_best(fit_forest, metric = "rmse")
+
+# Finalize the workflow with the best parameters
+final_wf_forest <- finalize_workflow(wf_forest, best_rmse_forest)
+
+# Fit the final model on the entire training data
+final_fit_forest <- final_wf_forest %>% fit(data = train_df)
+
+# Make predictions on the test dataset
+pred_forest <- predict(final_fit_forest, new_data = test_df)
+
+# Rename the .pred column to SalePrice
+pred_forest <- pred_forest %>% rename(SalePrice = .pred)
+
+
+# Create the submission dataset
+submit_forest <- data.frame(
+  Id = test_df$Id,
+  SalePrice = pred_forest$SalePrice
+)
+
+# Reverse the log transformation
+submit_forest$SalePrice <- exp(submit_forest$SalePrice)
+
+# Save the dataset
+write_csv(x = submit_forest, file = "RandomForest_Final.csv")
+
+
+```
+
+For my random forest model I tuned the number of variables that were randomly assigned at each split and the minimum number of data points required at each node for it to split further. Surprisingly, my random forest model did not beat my lasso models performance and got a score of 0.1517 compared to 0.1257 from the lasso model. I am surprised because previously my random forest model had performed the best but it seems like the lasso model benefited a lot from the more complex imputation method. 
+
+
+
+
+The model the performed best for me was the lasso regression and had about a 17% lower rmse than my random forest model and was close to a 35% lower rmse than the linear regression. I would say that in this context the lasso regression did perform significantly better than the linear and random forest models. This is mainly due to the fact that there was a noticeable difference in the rmse and the more accurate our model can be the better we will be at answering prediction questions accurately. By providing the lasso model with polynomial transformation of variables it helped provide more flexibility to the model, and lasso's ability to exclude variables that don't have a significant impact on our prediction helps to not include variables that might cause noise. The random forest could have performed better if I had tuned more of the hyperparameters, excluded noisy features, or created interaction variables that represented important relationships in the data. By giving all the variables to the random forest model I probably introduced some noise, which did not effect the lasso model because it is able to ignore noisy variables.

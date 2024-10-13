@@ -1,0 +1,176 @@
+---
+title: "Class Size Reduction Memo"
+header-includes:
+    - \usepackage{setspace}\doublespacing
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,      
+  warning = FALSE,
+  message = FALSE,
+  error = FALSE,
+  fig.width = 5,  
+  fig.height = 2.85, 
+  comment = NA  
+)
+
+setwd("C:/Users/justg/Dropbox (University of Oregon)")
+
+library(rdrobust)
+library(ggplot2)
+library(sandwich)
+
+# Load in data
+grade5 <- read.csv("grade5.csv")
+```
+
+
+
+\centering
+
+  The following analyses are provided to help inform the proposed policy change of lowering class sizes in the school district. I will review research measuring the causal impact of class size on student achievement conducting in both Israel and California, and discuss how those findings might relate to potential achievement changes for our students. 
+
+  The first paper I dig into was authored by Joshua Angrist and Victor Lavy who utilized Israel's 40:1 student teacher ratio to find causal effects of smaller class sizes. The basic principal of the policy is that no school in Israel may have classes of more than 40 students. This causes a sharp discontinuity for schools who have 40 and 41 students, where they are required to hire another teacher and bring class size down to 20-21 students. The authors take advantage of this policy and measure the impact on math and reading scores for schools just around this cutoff. This is a quasi-experimental design called regression discontinuity and we can label the impact causal because schools just above and just below the cutoff should be similar other than the class size difference that was induced by the policy.
+
+  A simple comparison of test scores in small classes versus large classes would not have shown a causal impact because there would be too many confounders affecting the estimated relationship. There are many other factors that would not be consistent for schools that have large class sizes and those that have small class sizes, potentially impacting the test scores and not attributed to class size itself. By using regression discontinuity we can be confident that the change in test scores are because of class size as schools just below and just above the cutoff (41 student enrollment) are comparable. Using regression discontinuity, figures 1-3 show the impact of the class size policy on 5th grade class size, math scores, and reading scores respectively.
+
+```{r}
+#Subset data to observations in [20,60]
+narrow <- subset(grade5, school_enrollment <= 60 & school_enrollment >= 20)
+
+#draw binned scatter plot with linear fit for class size at 40 student school enrollment
+rdplot(narrow$classize, narrow$school_enrollment, c = 40.5, p = 1, nbins = 20, 
+       x.label = "School Enrollment", y.label= "Class Size", title="Figure 1: Impact on Class Size", masspoints = "off")
+
+```
+
+
+```{r}
+#draw binned scatter plot with linear fit for math scores at 40 student school enrollment cutoff
+rdplot(narrow$avgmath, narrow$school_enrollment, c = 40.5, p = 1, nbins = 20, 
+       x.label = "School Enrollment", y.label= "Average Math Scores", title="Figure 2: Impact on Average Math Scores", masspoints = "off")
+
+
+```
+
+
+```{r}
+#draw binned scatter plot with linear fit for verbal scores at 40 student school enrollment cutoff
+rdplot(narrow$avgverb, narrow$school_enrollment, c = 40.5, p = 1, nbins = 20, 
+       x.label = "School Enrollment", y.label= "Average Verbal Scores", title="Figure 3: Impact on Average Verbal Scores", masspoints = "off")
+
+```
+
+
+
+```{r discontinuity regression, include=FALSE}
+#Subset data for enrollment 80 or less
+narrow <- subset(grade5, school_enrollment <= 80)
+
+# Next we generate an indicator variable for school_enrollment being above 40. 
+narrow$above40 <- 0
+narrow$above40[which(narrow$school_enrollment > 40)] <- 1
+
+#  We then generate a variable that equals school_enrollment minus 40 and the interaction term between this variable and the indicator for school_enrollment being above 40.
+
+#Generate centered version of enrollment
+narrow$x <- narrow$school_enrollment - 40
+
+#Generate interaction term 
+narrow$x_above <- narrow$above40*narrow$x
+
+# Finally, we run a regression of the outcomes on these three variables, restricting the regression to observations with school_enrollment between 0 and 80.  The coefficient on above40 is the estimate of the discontinuity in yvar at the threshold. 
+
+# Note: you need to change outcome1, outcome2, outcome3 to outcomes in the data
+outcome1_regression <- lm(classize ~ above40 + x + x_above, data = narrow)
+
+# This shows you the results, but you should format it more nicely in your memo.
+summary(outcome1_regression) 
+
+
+outcome2_regression <- lm(avgmath ~ above40 + x + x_above, data = narrow)
+
+summary(outcome2_regression)
+
+
+outcome3_regression <- lm(avgverb ~ above40 + x + x_above, data = narrow)
+
+summary(outcome3_regression)
+
+```
+
+```{r clustered standard errors, include=FALSE}
+# We should report standard errors that are clustered by school. 
+# (Superintendents want the answer to be correct but don’t want you to explain with this level of detail.)
+
+cluster_outcome1  <- sqrt(diag(vcovCL(outcome1_regression, cluster= narrow$schlcode)))
+cluster_outcome2  <- sqrt(diag(vcovCL(outcome2_regression, cluster= narrow$schlcode)))
+cluster_outcome3  <- sqrt(diag(vcovCL(outcome3_regression, cluster= narrow$schlcode)))
+
+# Use these standard errors when talking about how precise the estimated effects are
+cluster_outcome1
+cluster_outcome2
+cluster_outcome3
+
+```
+
+  
+  The regression results that correspond with the figures above indicate that reduced classes sizes had a positive and significant effect on test scores. The effect of having more than 40 students enrolled, thereby cutting down class size, is 3.43 (+/- 3.22) higher math scores and 2.63 (+/- 2.98) higher reading scores according to the regression discontinuity results. Figure 1 shows the effect of the policy on class size after the 41st student enrolls. Interestingly, the results show that the policy cutoff induced an 11 (+/- 3) student reduction in class size not a ~20 student reduction in class size. If schools were following the class size rule exactly as it was described we would expect to see average class sizes cut in half at the 41 student mark for school enrollment. In other words, average class size should be 40 when the school has 40 students enrolled and drop down to 20.5 when the 41st student enrolls. However, we do not see this significant of a drop in the data. Instead of dropping average class size by about 20 with the 41st student, the actual drop seen in the data is around half that. There could be several reasons why this occurs, but one of the most likely is that 40 students in a classroom is the maximum allowed before another teacher must be brought on, but many schools most likely bring on another teacher before this point and willingly reduce class size before being forced to.
+  
+  Figure 4 shows the average class size for each level of school enrollment from 30-40. Schools in this range have fairly large class sizes but have not yet reached the 41 student mark that would require them to reduce class size. We can observe that the average class size in this range is lower than the school enrollment for all levels, which indicates that there are several schools that are reducing class sizes before reaching the cutoff point.
+
+```{r}
+# Schools with 30-40 student enrollment
+narrower <- subset(narrow, school_enrollment >= 30 & school_enrollment <= 40)
+
+# Calculate the average class size for each enrollment level
+average_class_size <- aggregate(classize ~ school_enrollment, data = narrower, FUN = mean)
+
+# Create the bar graph
+ggplot(average_class_size, aes(x = factor(school_enrollment), y = classize)) +
+  geom_bar(stat = "identity", fill = "blue", color = "black") +
+  labs(x = "School Enrollment", y = "Average Class Size", title = "Figure 4: Average Class Size by School Enrollment") +
+  theme_minimal()
+```
+
+
+  One key assumption for regression discontinuity designs are that the outcomes are continuous around the cutoff, in this case school enrollment of 41, and that individuals are similar just above and just below the cutoff. Additionally, individuals should not be able to sort themselves above or below the cutoff through self selection. Figure 5 is a histogram of Israeli school's enrollment rates and help us observe if schools are sorting themselves above or below the cutoff. There appears to be a sharp incline leading up to the 40 student mark and not many schools are in the 30-39 student range when compared to 41+ students. This suggests that there might be some sorting occurring where schools seem to avoid being in the 30-40 school enrollment range, or geographical and population factors might affect the number of schools in Israel with this range of students.
+
+
+
+```{r histogram to look at distribution around cutoff}
+# Create the histogram with a vertical line at 40.5
+ggplot(narrow, aes(x = school_enrollment)) +
+  geom_histogram(binwidth = 2, fill = "blue", color = "black", alpha = 0.7) +
+  geom_vline(xintercept = 41, color = "red", linetype = "solid", size = 1) +
+  labs(title = "Figure 5: Distribution of Student Enrollment",
+       x = "School Enrollment",
+       y = "Frequency") +
+  theme_minimal()
+```
+  
+  
+  For the purpose of informing the proposed policy change at our own school, I will analyze what the likely impact of reducing class size from 40 to 35 would have been on math and verbal scores in the Israeli schools. Unlike a traditional linear regression, we cannot simply plug in a 35 student class size in for the coefficient of our regression model. This would be ignoring the discontinuity design that gives us the causal impact of smaller class size, not simply a correlation. Because we measured 3.43 and 2.63 higher math and readings scores respectively at the cutoff, we can expect the effect of reducing class size by 5 students to be about 45 percent of this change. This is because the test score improvements observed were the result of an 11 student class size reduction (recall Figure 1). By reducing class size by 5 students instead I would estimate the math and reading scores would have increased by 1.54 and 1.18 respectively for this group of students. Keep in mind we cannot extrapolate this to a reduction of say 20 to 15 student classrooms. Class size reduction at this level was not seen in our data so we cannot be sure of what the potential effect might be. We cannot assume that a 5 student reduction in class size will have the same effect at every level.
+  
+  
+  The results thus far would indicate that reducing class size has a positive impact on student achievement, but another aspect of this policy change would be the increased number of teachers required to reduce class size numbers. The paper by Jepsen and Rivkin studies the impact of California's 1 billion dollar class-size-reduction (CSR) program by using year-to-year differences. They find that the program did reduce K-3 class sizes and improve math and reading scores, but the positive effects were dampened by an increase in unqualified teachers. In the short run schools had teachers with less experience, while the number of teachers without full certification persisted into the long run. Most of the influx of less qualified teachers found their way into low income areas, which created a situation where high income areas received most of the benefits of this program. This study highlights the potential risks of reducing class sizes with an influx of less qualified teachers. While the authors still find beneficial effects from reducing class size, there is a risk of favoring high income areas if policies are not in place to spread qualified teachers to disadvantaged areas.
+  
+  Based on the evidence from the Israel and California school studies, as well as some of the analyses conducted previously, I would recommend the district hire more teachers to reduce the current class size by a modest amount. Both studies show a clear positive impact on student achievement when class sizes were reduced, however, both do come with their own limitations. The cultural and institutional differences in the Israel study when compared to our own could effect the impact observed in that study, while the CSR paper pointed out the limiting factor that increasing numbers of under qualified teachers could bring. It is for these reasons that I believe a smaller class size reduction of 5 students would be the most pragmatic to start with. We should expect to see a moderate improvement in student achievement while not raising costs drastically or the need for large numbers of under certified teachers.
+  
+
+
+
+
+\newpage
+
+References:
+
+Angrist, Joshua D., and Victor Lavy. "Using Maimonides' rule to estimate the effect of
+class size on scholastic achievement." The Quarterly Journal of Economics 114, no. 2
+(1999): 533-575.
+
+Jepsen, Christopher, and Steven Rivkin. "Class size reduction and student achievement
+the potential tradeoff between teacher quality and class size." Journal of Human
+Resources 44, 1 (2009): 223-250.

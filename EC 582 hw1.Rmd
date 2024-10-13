@@ -1,0 +1,169 @@
+---
+title: "Homework 1"
+author: "William Grossman"
+date: "1/30/2024"
+output: 
+    pdf_document:
+    latex_engine: xelatex
+    includes:
+      in_header: header.tex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+setwd("C:/Users/justg/Dropbox (University of Oregon)")
+library(pacman)
+p_load(ggplot2,dplyr,readr,stargazer,knitr,sandwich,lmtest,knitr)
+
+#Load data
+library(haven)
+nafta <- read_dta("nafta.dta")
+```
+
+# Part A:
+
+1.	One problem with restricting international trade to rely more on national production is that country would not be able to reap any of the benefits of comparative advantage. In Lincoln’s example, if England had a comparative advantage in coat production while the US had an advantage in tools production, then greater levels of production between the two countries would be possible if they produced what they had an advantage in and traded their excess with one another. This would raise consumption and the standard of living in both countries but would not be possible with a policy of autarky and restricting trade. So, while some US coat factory employees might feel the strain of global trade, the total economic pie of the U.S. would be larger and displaced workers can always be retrained and migrate to other sectors.
+
+2.	A country’s trade balance is measured by their exports - imports, which is also equal to private savings + public savings – investments. This means that if a country is running a trade deficit, they are receiving capital flows from other countries that have a positive trade balance. This means that a country importing more than exporting would be able to finance the increased consumption through foreign investments coming into the country, leading to a higher consumption rate that would be possible otherwise. So, it is not harmful to run a sustainable trade deficit.
+
+3.	Two ways economists measure financial market integration is through the correlation between domestic savings and domestic investments, and by measuring the current account of a country as a percent of its GDP. The former method is used because if a country was completely isolated it would have a correlation of 1 because domestic savings would be used for all of the domestic investments, but a correlation of 0 would show that financial capital is perfectly mobile and foreign savings are being used for domestic investment. The latter method is used to show how much FDI a country receives with respect to the size of its economy. It would not be fair to compare the financial integration of China and Chile based only on the absolute value of FDI coming into each country, so capital flow is divided by GDP to give a relative statistic that can be used to compare how integrated various countries financial markets are.
+
+4.	There have been two waves of globalization that the world has seen thus far, one from 1870-1914, and from 1960-present. There were several reasons for the first wave of globalization, but the most prominent are greatly improved transportation, communication, and labor productivity. These improvements can all be attributed to technological advancements in their respective fields such as the steam engine, the telegraph, and factory machinery. The second wave of globalization that the world is experiencing today has also been impacted by new technologies, especially communication technologies like the internet and cellphone, that has greatly reduced logistical costs and made it much easier to transport goods and services long distances. Additionally, the Bretton-Woods institutions, such as the IMF and WTO, have reduced restrictions to trade and increased capital flows across all countries. While increased trade is a common theme for both waves, the kind of trade countries do has changed. For example, services are now imported and exported much more than they were in the first wave; the fragmentation of production is also unique to the modern wave of globalization as the production of goods is now split into separate parts of the worlds only to be shipped to a common location where they are all assembled into a final product.
+
+# Part B:
+
+5.	With a flat tariff of $15 on each spark plug the U.S. would import their spark plugs from ROW which has a price of $10 for each spark plug. Since spark plugs would be imported the tariff would be added to the cost and price making the equilibrium price of spark plugs $25 in the U.S. The quantity consumed and imported would be determined by the demand function Q = 100 – P, so 75 spark plugs would be imported and consumed in the U.S. This would mean that tariff revenue would be determined by $15 (tariff rate) times 75 (amount of spark plugs imported) generating a tariff revenue of $1,125. The consumer surplus is the money that consumers would have been willing to pay for spark plugs but did not have to because the price is set at $25. In this case, the consumer surplus would be 75 * 75 * 0.5 which is equal to 2812.5.
+
+6.	With a free trade agreement with Mexico that eliminates tariffs on spark plugs, the new equilibrium would be 80 spark plugs being imported from Mexico and consumed. Tariff revenue would be $0 because of the free trade agreement and the consumer surplus would be 80 * 80 * 0.5 which would be equal to 3200. 
+
+7.	Total welfare would be measured by the consumer and producer surplus plus government revenue from the tariffs. In this case, total welfare before the free trade agreement was 3937.5 and with the trade agreement it is 3200 (there is no producer in this case). In this example, the welfare change from trade creation is the additional consumer surplus (an additional 387.5) gained from the increased imports of spark plugs now possible with no tariffs with Mexico. The welfare change from trade diversion would be the loss of tariff revenue ($1125) from no longer importing from ROW, there is a net loss in welfare from the trade agreement because the lowest cost producer, ROW, is no longer supplying spark plugs to the U.S.
+
+8.	If the tariff on spark plugs had been $50 instead of $15, then the change in total welfare from the trade agreement would be a gain of 400. Before the trade agreement, the U.S. would import 40 spark plugs from ROW at a price of $60, which generates 800 consumer surplus added to the $2000 in tariff revenue equaling 2800 welfare. After the trade agreement with Mexico the consumer surplus and total welfare would be 3200 from importing 80 spark plugs at a price of $20. So, the gain in welfare from trade creation comes from the additional consumer surplus from more imports (2400), while the loss in welfare from trade diversion comes from lost tariff revenue ($2000).
+
+9.	If the tariff had only been $5 for spark plugs then a trade agreement with Mexico would have caused no change in welfare from trade creation or diversion because the U.S. would continue to import from ROW, because ROW would still provide the lowest price even with the tariff ($15 from ROW versus $20 from Mexico).
+
+# Part C:
+
+10.	The relationship between increased economic integration and government spending is a result of the compromise that most advanced industrial economies made in the late 20th century. A social contract was developed where workers in advanced economies accepted the risks and changes that come with globalization, but required more social safety nets that could help mitigate the damage of global competition. Most of this social spending is spent on transfer payments like retirement, retraining, and unemployment benefits, which help ensure a paticular standard of living for workers even if the lose their jobs to global competition. However, it has simultaneously become more challenging to collect tax revenue during this period because countries are incentivized to lower taxes on capital because it is easily moved between borders. This shifts the tax burden to labor which does not help the situation when they are the same group that needs to be protected using the safety nets.
+
+11.	Differences in national practices and institutions are a source of comparative advantage in modern globalization because of the relative free flow of capital across international borders. If a country raises minimum wage or benefits requirements, companies in that country may find it more profitable to move their production to a country with minimal labor laws. This would incentivize the original country to either lower its own labor standards to invite firms back or put pressure on other countries to also raise their labor standards, creating an arbitrage of institutions and practices. A similar example could be made for environmental or anti-corruption regulations, all of which would create comparative advantage opportunities for countries with more relaxed regulations.
+
+12.	One of the misconceptions the article discusses is the idea that global trade is completely dependent on wage inequality and countries with low wages will attract all of the worlds production. The problem with this view is that wages are mostly determined by worker productivity, so, firms are not always better off transferring factories to low-wage countries when the labor in that country will be less productive. There is also no evidence that this logic is sound, otherwise countries like Bangladesh and Madagascar would be major exporters of the world’s goods. Another misconception about globalization is that export-focused economies in East Asia have suffered because of the exploitation of their cheap labor. On the contrary, many of these countries have seen an improved standard of living generally, including at the bottom of the income ladder as factory workers were formerly low-income peasants. Finally, there is an unjustified belief that increased levels of globalization will reduce global consumption when high-income jobs in advanced economies move to low-income countries where the worker earns a fraction of the wage. The problem with this view is: one, the association between worker productivity and wages, and two, the income would just change hands to shareholders or employers that can just as easily consume more.
+\newpage
+
+# Part D:
+
+13. 
+```{r}
+# Make a histogram for change in US import tariffs from Mexico
+ggplot(data = nafta, aes(x = d_tariff)) +
+  geom_histogram(bins = 50) +
+  labs(x ='Change in US import tariffs from Mexico', y='Number of firms affected', title = 'US import tariff changes with Mexico')
+```
+
+\newpage
+
+```{r}
+# Step 1: Filter the rows with negative values in the 'd_tariff' column
+negative_values_df <- nafta[nafta$d_tariff < 0, ]
+
+# Step 2: Sort the data frame based on the 'd_tariff' column in ascending order
+sorted_df <- negative_values_df[order(negative_values_df$d_tariff), ]
+
+# Step 3: Group by the 'sicname' column and get the top 5 unique industries
+top_5_industries <- sorted_df[!duplicated(sorted_df$sicname), ][1:5, ]
+
+# Display the result
+print(top_5_industries[c('sicname', 'd_tariff')])
+```
+
+The top 5 industries with the largest tariff cuts are all clothing and textile related industries.
+
+
+
+
+14.
+
+```{r}
+# Create natural log variables
+nafta$ln_indsize <- log(nafta$indsize)
+nafta$ln_rvadd <- log(nafta$rvadd)
+nafta$ln_skill_intensity <- log(nafta$skill_intensity)
+nafta$ln_kl_ratio <- log(nafta$kl_ratio)
+```
+
+15.
+
+```{r}
+# Regression model
+model1 <- lm(dln_employment ~ dln_tariff + ln_indsize + ln_rvadd + 
+               ln_skill_intensity + ln_kl_ratio, data = nafta)
+
+
+# Compute robust standard errors
+robust_se <- vcovHC(model1, type = "HC0")
+
+
+# Robust standard error coefficients
+robust_results <- coeftest(model1, vcov = robust_se)
+
+```
+\newpage
+
+16.
+
+```{r, results='asis'}
+
+# Create stargazezr table for results
+stargazer(robust_results, header=FALSE, 
+          covariate.labels = c("Log change in tariff", "Log industry size", 
+                               "Log real value added", "Log skill intensity", 
+                               "Log capital to labor ratio"),
+          type = "latex", title = "Impact on log employment", style = "aer")
+
+```
+
+17.
+
+According to the results from the regression, a 1 percent drop in import tariffs is correlated with a 6.8 percent drop in local employment. I am not surprised by the sign of this coefficient as firms would be under increased pressure from foreign competition. This commonly leads to short-term frictional unemployment as workers in less productive industries move to industries that the U.S. has a comparative advantage in. Also, employment would be unlikely to recover in import competing industries, like clothing, because the U.S. is not likely to become more competitive in that sector over night.
+
+
+\newpage
+
+18.
+
+```{r, results='asis'}
+# Create interaction variable between ln change in tariff and ln skill intensity
+nafta['dln_tariff_skill'] = nafta['dln_tariff'] * nafta['ln_skill_intensity']
+
+# Re-run regression with new interaction variable
+model2 <- lm(dln_employment ~ dln_tariff + ln_indsize + ln_rvadd + 
+               ln_skill_intensity + ln_kl_ratio + dln_tariff_skill, 
+             data = nafta)
+
+# Compute robust standard errors
+robust_se2 <- vcovHC(model2, type = "HC0")
+
+# Robust standard error coefficients
+robust_results2 <- coeftest(model2, vcov = robust_se2)
+
+# Create stargazezr table for results
+stargazer(robust_results2, header=FALSE, 
+          covariate.labels = c("Log change in tariff", "Log industry size", 
+                               "Log real value added", "Log skill intensity", 
+                               "Log capital to labor ratio", 
+                               "Log interaction between tariff change and skill intensity"),
+          type = "latex", title = "Impact on log employment with interaction variable", 
+          style = "aer")
+
+```
+
+\newpage
+
+19.
+
+To see the effects of a fall in tariffs on employment, taking into account different levels of skill, the median skill intensity will be multiplied to the coefficients for the interaction variable that we created earlier plus the change in tariffs. This would show how different levels of skill intensity are affected by the change in tariffs. To calculate this for the top quartile would be -3.816 + -5.988(-1.039), which is equal to 2.406, doing the same for the median and bottom quartile provides and estimate of 4.292 and 5.675 respectively. This means that the loss in employment from tariffs is almost twice as big for the bottom quartile of skilled labor versus the top quartile of skilled labor. This means that a 1 percent fall in import tariffs would lead to a 2.4 percent decline in employment for the top quartile of skilled labor, as well as a 4.3 percent and 5.7 percent decline in employment for median and lower quartile skilled labor respectively.
+
+20.
+
+When controlling for skill intensity and tariff changes, there does not appear to be a harmful impact of NAFTA on US employment. In fact, there appeared to be a negative relationship between import tariffs and US employment, indicating that higher tariffs would lower employment. However, low skilled labor was harmed to a greater extent than high skilled labor. This is most likely because these industries are the ones who are directly competing with Mexican firms, while high skill labor industries grow because they have a comparative advantage with Mexico. This would cause frictional unemployment as workers need to retrain to enter thriving export-focused sectors, which are usually high-skilled jobs in the U.S. Based on this data, if I were an adviser I would support NAFTA with the understanding that programs and safety nets would be put in place to help transition labor towards more productive industries. It would be detrimental to low-skilled labor if this policy was in place without such programs as many workers would be unemployed for greater lengths of time as they try to retrain themselves.
