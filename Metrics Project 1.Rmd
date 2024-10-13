@@ -1,0 +1,164 @@
+---
+title: "Econometrics Project I"
+author: "William Grossman"
+date: "Discussed with Amit, Anthony, and Dre"
+output: 
+pdf_document: default
+
+---
+
+```{r setup, include=TRUE}
+setwd("C:/Users/justg/Dropbox (University of Oregon)")
+
+library(pacman)
+p_load(ggplot2,dplyr,readr,stargazer,knitr,sandwich,lmtest,knitr,haven,kableExtra,broom,ggstats)
+
+# Load data
+ohp <- read_dta("ohp.dta")
+
+# Clear 2 value from gender column
+ohp <- ohp[ohp$gender_inp != 2, ]
+
+# Clear description
+attr(ohp$treatment, "label") <- NULL
+
+```
+
+
+Question 1:
+Treatment should be the experimental variable because it shows whether someone was selected randomly for the lottery. This allows us to assume the experiment is randomized and takes care of any omitted variable bias. Therefore, both our treatment and control groups should be comparable across different measures and there is no risk of selection bias because assignment was completely random. The variable ohp_all_ever_survey simply measures whether someone had ever been enrolled in medicaid. This would not be a good experimental variable because there are several factors that could influence whether or not someone had medicaid, it could also impact their health, which is one of the outcomes we want to measure.
+
+Question 2:
+
+```{r, results='asis', error=FALSE, message=FALSE}
+
+# Make a table of the means of each group
+means_by_treatment <- ohp %>%
+  group_by(treatment) %>%
+  summarise(
+    Age = mean(age_inp, na.rm = TRUE),
+    Education = mean(edu_inp, na.rm = TRUE),
+    Female = mean(gender_inp, na.rm = TRUE),
+    White = mean(race_white_inp, na.rm = TRUE),
+    Black = mean(race_black_inp, na.rm = TRUE),
+    Medicaid = mean(ohp_all_ever_survey, na.rm = TRUE),
+    Doctor = mean(doc_num_mod_inp, na.rm = TRUE)
+  )
+
+```
+
+
+Question 3:
+
+```{r, results='asis', error=FALSE, message=FALSE}
+# Make a list of coefficients
+m1 <- lm(age_inp ~ 1 + treatment, data = ohp) 
+m2 <- lm(gender_inp ~ 1 + treatment, data = ohp)
+m3 <- lm(edu_inp ~ 1 + treatment, data = ohp)
+m4 <- lm(race_white_inp ~ 1 + treatment, data = ohp) 
+m5 <- lm(race_black_inp ~ 1 + treatment, data = ohp)
+
+# Compile list of coefficients into one variable
+models <- list(m1, m2, m3, m4, m5)
+
+# Make stargazer table of group means and differences for control and treatment
+table1 <- stargazer(models, header=FALSE, 
+                    covariate.labels = c("Treatment Differences", "Control Means"), 
+                    dep.var.labels = c("Age", "Female", "Education", "White", 
+                    "Black"), type = "latex", 
+                    title = "Balance Table", 
+                    font.size = "scriptsize", keep.stat = "f", 
+                    column.sep.width = "-10pt")
+```
+
+
+Question 4:
+The balance table (Table 1) does seem to show that individuals had been randomly assigned to the treatment and control groups. The difference in means between the two groups are very small and are not statistically significant, aside from age. It seems the treatment and control groups are comparable across age, gender, education, and race. This shows that the random assignment was effective at creating two comparable groups, so the effect of the treatment can now be analyzed with confidence.
+
+Question 5:
+
+```{r, results='asis', error=FALSE, message=FALSE}
+# Run regression for being enrolled with medicaid on winning the lottery
+lmcomp <- lm(ohp_all_ever_survey ~ treatment, data = ohp)
+
+# Make stargazer table for regression results
+table2 <- stargazer(lmcomp, header=FALSE, 
+                    covariate.labels = c("Treatment Difference", "Control"), 
+                    dep.var.labels = c("Medicaid Enrollment Percentage"), type = "latex", 
+                    title = "Compliance Rate", 
+                    font.size = "scriptsize", keep.stat = "f", 
+                    column.sep.width = "1pt")
+```
+
+The compliance rate can be found by adding the proportion of people who enrolled in medicaid from the control group with the difference in the treatment group from the table above. This gives us a total compliance rate of about 41 percent, meaning that 41 percent of the people who won the lottery actually enrolled in medicaid. This proportion is over double the size of the control group, only 16 percent enrolled in medicaid, indicating that people in the treatment group were much more likely to be enrolled in medicaid at some point.
+
+Question 6:
+
+```{r, results='asis', error=FALSE, message=FALSE}
+# Run regressions to find the ITT effect on various health effects
+m6 <- lm(doc_num_mod_inp ~ treatment, data = ohp)
+m7 <- lm(bp_sar_inp ~ treatment, data = ohp)
+m8 <- lm(rx_num_mod_inp ~ treatment, data = ohp)
+m9 <- lm(hbp_dx_post_lottery ~ treatment, data = ohp)
+m10 <- lm(dia_dx_post_lottery ~ treatment, data = ohp)
+
+# Compile list of regression into one variable
+models2 <- list(m6, m7, m8, m9, m10)
+
+# Make stargazer table to display regression results
+# Make stargazer table of group means and differences for control and treatment
+table3 <- stargazer(models2, header=FALSE, 
+                    covariate.labels = c("Treatment Differences", "Control Means"), 
+                    dep.var.labels = 
+                    c("Doc Visits", "Blood Pressure", "Medications", "Hypertension", 
+                    "Diabetes"), type = "latex", 
+                    title = "Intent to Treat Effect", 
+                    font.size = "scriptsize", 
+                    column.sep.width = "-10pt")
+```
+
+The intent-to-treat effect (ITT) is the raw difference between the control and treatment groups. In this case, I analyze the ITT effect on multiple health outcome variables to see if winning the lottery had a significant impact on individuals health. Table 3 shows that some of the variable differences are statistically significant (Doctor visits, medications, and diabetes diagnosis) and show a positive impact of winning the lottery on peoples health outcomes. Increased diabetes diagnosis is treated as a positive health outcome because when a diagnosis is made an individual can manage their health better than if a condition remained diagnosed. Doctor visits and medication use also were higher in the treatment group meaning they were managing their health more than the control group.
+
+
+Question 7:
+
+```{r, error=FALSE, message=FALSE}
+# Compile list of regression into one variable
+models3 <- list(
+  "Doc Visits" = m6,
+  "Blood Pressure" = m7,
+  "Medications" = m8, 
+  "Hypertension" = m9,
+  "Diabetes" = m10)
+
+# Create coefficient plot
+ggcoef_compare(models3, significance = 1, significance_labels = " ")
+```
+
+The coefficient plot graph shows the coefficient estimates along with their confidence intervals. Doctor visits are only statistically significant at the 10 percent level which is why zero is included in it's interval. Diabetes diagnosis and medication use are are sightly higher in the treatment group, but at lower significance levels.
+
+
+
+Question 8:
+
+Doctor Visits: 1.559, 
+Blood Pressure: -0.236,
+Medications: 0.508, 
+Hypertension: 0.008, 
+Diabetes: 0.035.
+
+
+The ATET is the average treatment effect on the treated, which is seen as the "true impact" because it adjusts the estimates for non-compliance. It is calculated by dividing the raw difference between the treatment and control groups, as was done earlier in table 3, by difference in group percentages that received treatment (i.e. the percentage of those who received treatment in the treatment group minus those who received treatment in the control group, 0.254 in this case). The ATET is higher in magnitude for all of the health outcome variables that were measured earlier. This adjusted measurement shows that the impact of the treatment was even greater than previously measured because it is now being adjusting for compliance.
+
+
+
+Question 9:
+
+
+
+
+Reference:
+
+Taubman, S.L., Allen, H.L., Wright, B.J., Baicker, K. and Finkelstein, A.N., 2014. Medicaid
+increases emergency-department use: evidence from Oregon's Health Insurance
+Experiment. Science, 343(6168), pp.263-268

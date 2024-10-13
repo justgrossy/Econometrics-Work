@@ -1,0 +1,233 @@
+---
+title: "Metrics Project 3"
+author: "William Grossman"
+date: "Discussed with Anthony, Amit, and Dre"
+output:
+  pdf_document: default
+  linestretch: 2
+---
+
+```{r setup, include=FALSE}
+setwd("C:/Users/justg/Dropbox (University of Oregon)")
+
+library(tidyverse)
+library(stargazer)
+library(haven)
+library(rdrobust)
+library(rddensity)
+library(knitr)
+library(ggstats)
+library(ggplot2)
+library(plm)
+library(scales)
+library(sandwich)
+library(lmtest)
+
+nbp <- read_dta("nbp.dta")
+```
+
+**Question 1:**
+
+The NOx budget trading program was a cap and trade program that aimed to reduce NOx emissions and transportation throughought the Eastern U.S. The program started in 2003 and was primarily focused with lowering NOx emissions during the warm summer months. In the dataset, if the 'nbp' variable equals 1 it signifies that the state is regulated by the nbp program when the measurement was taken. If 'summer' equals 1 it indicates that the measurement was taken during the May-September period. Finally, if 'post' is equal to 1 it signifies that the year was after 2003 when the measurement was taken.
+
+**Question 2:**
+
+```{r, echo=FALSE, warning=FALSE, error=FALSE}
+# Create a new column for summer equivalent nox values
+nbp <- nbp %>%
+  mutate(summer_equi_nox = if_else(summer == 0, nox_emit * (5/7), nox_emit))
+
+
+# Filter rows where nbp equals 1, then calculate the average of nox_emit for each combination of year and summer
+nox_avg <- nbp %>%
+  filter(nbp == 1) %>% # Filter rows where 'nbp' column equals 1
+  group_by(year, summer, post) %>%
+  summarise(nox = mean(nox_emit, na.rm = TRUE)) %>%
+  ungroup()
+
+
+# Make line graph
+ggplot(nox_avg, aes(x = year, y = nox, group = summer)) +
+  geom_line(aes(linetype = as.factor(summer)), color = "blue", size = 1) +
+  geom_point(color = "blue") +
+  geom_vline(xintercept = 2002, color = "black", linetype = "solid") +
+  scale_x_continuous(breaks = seq(min(nox_avg$year), max(nox_avg$year), by = 1)) +
+  scale_linetype_manual(values = c("0" = "dashed", "1" = "solid"),
+                        labels = c("Winter months", "Summer months")) +
+  labs(title = "States Participating in NBP",
+       x = "Year",
+       y = "Seasonal NOx Emissions (Mil, Tons)",
+       linetype = "Season") +
+  theme_bw()
+
+```
+\newpage
+**Question 3:**
+
+The parallel trends assumption states that in the absence of a treatment, the average outcomes for the treated and control groups would have followed parallel paths over time. Looking at Fig. 2 that is only concerned with states that are participating in NBP, the winter months line (dotted) would represent the control group and the summer months line (solid) would represent the treatment group. Visually it is difficult to tell if the graph suggests the parallel trends assumption is likely to hold. There are a couple years where the two groups move in opposite directions, but most years they move in the same direction, albeit with different magnitudes. However, I would assume the assumption will not hold because it seems there is too much variance in the trends between the two groups for the parallel trends assumption to hold. I run a linear regression using an interaction variable between years and treatment (summer) to see if the difference in trends between the treatment and control groups over time are statistically different. The results from the regression show that the year_summer interaction variable is not statistically significant meaning that the difference between the trends of the treatment and control groups are not significantly different from each other. This would support the parallel trends assumption and lends some confidence that the treatment and control groups were on similar trends before treatment.
+
+```{r, echo=FALSE, warning=FALSE, error=FALSE}
+# Separate pre-treatment dates
+nox_avg_pre <- nox_avg %>% 
+  filter(year >= 1997 & year <= 2002)
+
+# Make interaction term for year and treatment
+nox_avg_pre <- nox_avg_pre %>%
+  mutate(year_summer = (summer*year))
+
+# Run regression to test if slopes are significantly different from one another
+m1 <- lm(nox ~ year + summer + year_summer, data = nox_avg_pre)
+summary(m1)
+```
+
+**Question 4:**
+
+I run a difference in difference regression model that clusters standard errors at the state-by-season level. The model regresses the summer and post dummy variables, and the interaction between the two variables on NOx emissions to examine the relationship of the implementation of the NBP program on NOx emissions in NBP compliant states. The estimate for the interaction variable is -0.312 and is statistically significant at the 5 percent level, meaning there is a significant relationship between NOx emissions and the NBP when controlling for differences in the treatment and control group and time trends.
+
+```{r, echo=FALSE, warning=FALSE, error=FALSE}
+
+# Include states in the new data frame for clustered standard errors
+nox_avg_state <- nbp %>%
+  filter(nbp == 1) %>% 
+  group_by(year, summer, post, fips_state) %>%
+  summarise(nox = mean(nox_emit, na.rm = TRUE)) %>%
+  ungroup()
+
+# Make interaction term for summer and post
+nox_avg_state <- nox_avg_state %>%
+  mutate(summer_post = (summer*post))
+
+# Construct DD regression model
+ddm1 <- lm(nox ~ summer + post + summer_post , data = nox_avg_state)
+
+# Create Identifier
+nox_avg_state$state_summer <- interaction(nox_avg_state$fips_state, nox_avg_state$summer)
+
+# Calculate robust standard errors
+robust_se <- vcovHC(ddm1, type = "HC1", cluster = ~ state_season, data = nox_avg_state)
+
+# Use coeftest to apply the robust standard errors
+summary_coeftest <- coeftest(ddm1, vcov = robust_se)
+
+# Print results with clustered standard errors
+print(summary_coeftest)
+
+```
+
+**Question 5:**
+
+```{r, echo=FALSE, warning=FALSE, error=FALSE}
+
+# Include states in the new data frame for clustered standard errors
+nox_avg_0 <- nbp %>%
+  filter(nbp == 0) %>% 
+  group_by(year, summer) %>%
+  summarise(nox = mean(nox_emit, na.rm = TRUE)) %>%
+  ungroup()
+
+
+
+# Make line graph
+ggplot(nox_avg_0, aes(x = year, y = nox, group = summer)) +
+  geom_line(aes(linetype = as.factor(summer)), color = "blue", size = 1) +
+  geom_point(color = "blue") +
+  geom_vline(xintercept = 2002, color = "black", linetype = "solid") +
+  scale_x_continuous(breaks = seq(min(nox_avg_0$year), max(nox_avg_0$year), by = 1)) +
+  scale_y_continuous(limits = c(0.2, 1.2)) +
+  scale_linetype_manual(values = c("0" = "dashed", "1" = "solid"),
+                        labels = c("Winter months", "Summer months")) +
+  labs(title = "States Not Participating in NBP",
+       x = "Year",
+       y = "Seasonal NOx Emissions (Mil, Tons)",
+       linetype = "Season") +
+  theme_bw()
+```
+
+**Question 6:**
+
+Panel B of the Appendix Fig. 2 is included to be a kind of placebo test for the NBP policy. If states that did not implement NBP saw a similar trend change that NBP compliant states saw, there might be concern that NBP did not have a causal relationship with NOx emission and instead some omitted variable could be causing the change in trends in both NBP and non-NBP states. However, the graph does not visually give a reason to believe that the trends between summer and winter months changed significantly in non-NBP states after NBP was implemented in East Coast states.
+
+**Question 7:**
+
+I run a difference in difference regression model that clusters standard errors at the state-by-season level. The model regresses the summer and post dummy variables, and the interaction between the two variables on NOx emissions to examine the relationship of the NBP program on NOx emissions in NBP non-compliant states. The estimate for the interaction variable is -0.019 and is NOT statistically significant , meaning there is NO significant relationship between NOx emissions and the implementation of NBP in NBP non-compliant states when controlling for differences in the treatment and control group and time trends.
+
+```{r, echo=FALSE, warning=FALSE, error=FALSE}
+# Include states in the new data frame for clustered standard errors for non-NBP states
+nox_avg_state_0 <- nbp %>%
+  filter(nbp == 0) %>% 
+  group_by(year, summer, post, fips_state) %>%
+  summarise(nox = mean(nox_emit, na.rm = TRUE)) %>%
+  ungroup()
+
+# Make interaction term for summer and post
+nox_avg_state_0 <- nox_avg_state_0 %>%
+  mutate(summer_post = (summer*post))
+
+# Construct DD regression model
+ddm2 <- lm(nox ~ summer + post + summer_post , data = nox_avg_state_0)
+
+
+# Create Identifier
+nox_avg_state_0$state_summer <- interaction(nox_avg_state_0$fips_state, nox_avg_state_0$summer)
+
+# Calculate robust standard errors
+robust_se_0 <- vcovHC(ddm2, type = "HC1", cluster = ~ state_season, data = nox_avg_state_0)
+
+# Use coeftest to apply the robust standard errors
+summary_coeftest_0 <- coeftest(ddm2, vcov = robust_se_0)
+
+# Print results with clustered standard errors
+print(summary_coeftest_0)
+```
+
+**Question 8:**
+
+I run a triple-difference regression model that clusters standard errors at the state-by-season level to examine the impact of the NBP program on NOx emissions. The model regresses dummy variables for states where NBP is present, post NBP implementation, and summer months when NBP is in effect, as well as interactions between the variables with the interaction of interest being the triple difference interaction variable, on NOx emissions. Standard errors were clustered at the state-by-season level. The estimate for the DDD coefficient is -0.331 and is statistically significant at the 1 percent level. While the previous DD estimates where looking at the relationship between NBP policy and NOx emissions while controlling for summer months and the policy implementation, the DDD estimate also includes whether the state actually received treatment from the NBP policy. By looking at NOx emissions pre and post for regulated and unregulated states and layering on summer (when policy is active) versus winter months, concerns over parallel trends in regulated and unregulated states can be alleviated.
+
+```{r, echo=FALSE, warning=FALSE, error=FALSE}
+
+# Prepare interaction variables for DDD regression
+nbp$nbp_post <- (nbp$nbp*nbp$post)
+nbp$nbp_summer <- (nbp$nbp*nbp$summer)
+nbp$post_summer <- (nbp$post*nbp$summer)
+nbp$DDD_interaction <- (nbp$nbp*nbp$post*nbp$summer)
+
+# Run DDD regression model
+ddd_model <- lm(nox_emit ~ nbp + post + summer + nbp_post + nbp_summer + post_summer + DDD_interaction, 
+                data = nbp)
+
+# Create Identifier
+nbp$state_summer <- interaction(nbp$fips_state, nbp$summer)
+
+# Calculate robust standard errors
+robust_se_ddd <- vcovHC(ddd_model, type = "HC1", cluster = ~ state_season, data = nbp)
+
+# Use coeftest to apply the robust standard errors
+summary_coeftest_ddd <- coeftest(ddd_model, vcov = robust_se_ddd)
+
+# Print results with clustered standard errors
+print(summary_coeftest_ddd)
+
+```
+
+**Question 9:**
+
+The NBP program had a major impact on the air quality of participating states in the eastern U.S. during the 2000s. The policy reduced NOx emissions by an average amount of 331,000 tons per year, meaning that about 1.66 million tons of NOx emission were abated from 2003-2007 as a result of this policy. These results were found using a triple-difference regression model and are statistically significant to the >0.001 level. The triple-difference design from the research helps account for any concerns that may have arisen from non-parallel trends in the regulated and unregulated states by adding another layer to the regression with summer versus winter months. Summer months are when the policy was active so it allows for another layer of difference in the triple-difference model.
+
+\newpage
+**Question 10:**
+
+The two-way fixed effects model gives the same coefficient on the variable of interest as the DD model from question 3 because the treatment occurs at a single point in time and is not reversed and there is only a treatment and a control group. The two-way fixed effects model can control for all entity-specific and time-specific unobservables. Had the treatment not been at a single point in time or if the treatment status could change then the coefficients would not have been the same. 
+
+
+```{r, echo=FALSE, warning=FALSE, error=FALSE}
+
+
+# Use plm to run a two-way fixed effects model on DD for participating states
+fe_model <- plm(nox ~ summer + post + summer_post, data = nox_avg_state, 
+                model = "within", effect = "twoways")
+summary(fe_model)
+
+```
+
+

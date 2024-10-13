@@ -1,0 +1,272 @@
+---
+title: "Metrics Project 2"
+author: "William Grossman"
+date: Discussed with Dre
+output: 
+    pdf_document:
+    latex_engine: xelatex
+    includes:
+      in_header: header.tex
+---
+
+```{r setup, include=FALSE}
+setwd("C:/Users/justg/Dropbox (University of Oregon)")
+library(tidyverse)
+library(stargazer)
+library(haven)
+library(rdrobust)
+library(rddensity)
+library(knitr)
+library(ggstats)
+library(ggplot2)
+
+# Load data
+hriver <- read_dta("huairiver.dta")
+```
+
+
+**Question 1:**
+
+A simple comparison of the difference in means of the southern cities versus the northern cities would not measure the causal effect of the policy because it would not qualify as a discontinuity and would not be the same as a randomized experiment. For a regression discontinuity to act as a randomized experiment it needs to be an arbitrary cutoff so we can compare two groups that are alike and are only separated by the policy so we can measure its effects. Ebenstein et al overcomes this problem by using regression discontinuity because individuals who are just north or south of the river should be almost identical, the only thing that differs between them would be the policy. This allows them to compare groups that are alike and isolate the differences between them to the policy change. The outcome variable in the case of the Ebenstein et al paper is life expectancy while the assignment variable is geographic location, either north or south of the river.
+
+
+**Question 2:**
+
+A binned scatterplot is a scatterplot where certain ranges on the x-axis have been averaged so there is only one averaged observation per bin on the plot. For example, if we compared income on the x-axis with happiness on the y-axis using a binned scatterplot we would first define our income bins (ex. $0-9999, $10000-19999, etc.) and take the average happiness of all observations in each bin and only report those averages on the plot. 
+
+```{r, error=FALSE, message=FALSE, warning=FALSE, echo=FALSE}
+# Add bins to data
+hriver <- hriver %>% mutate(bins = cut(dist_huai, breaks = quantile(dist_huai, probs = seq(0,1,by = 0.02))))
+
+# Plot binned data with linear line of best fit
+  hriver %>% 
+  group_by(bins) %>% 
+  summarise(dist_huai = mean(dist_huai), pm10 = mean(pm10)) %>% 
+  ggplot(aes(x = dist_huai, y = pm10)) + 
+  geom_point(colour = "red", size = 2, alpha = 1) +
+  geom_vline(xintercept = 0) +
+  geom_smooth(method = "lm") +
+  labs(x = "Distance from Huai River (in degrees)", y = "pm10 Concentration", title = "Binned Scatterplot with Global Relationship") +
+  theme_bw()
+
+# Plot binned data with RD and linear best-fit lines
+  hriver %>%
+  group_by(bins) %>% 
+  summarise(dist_huai = mean(dist_huai), pm10 = mean(pm10)) %>%  
+  select(dist_huai, pm10) %>% 
+  mutate(Position = as.factor(ifelse(dist_huai >= 0, "North", "South"))) %>% 
+  ggplot(aes(x = dist_huai, y = pm10, color = Position)) +
+  geom_point() +
+  geom_vline(xintercept = 0) +
+  geom_smooth(method = "lm") +
+  labs(x = "Distance from Huai River (in degrees)", y = "pm10 Concentration", title = "Binned Scatterplot of pm10 Concentration with RD") +
+  theme_bw()
+```
+
+**Question 3:**
+
+```{r, error=FALSE, message=FALSE, warning=FALSE, echo=FALSE}
+# Plot binned data with RD for temperature
+  hriver %>%
+  group_by(bins) %>% 
+  summarise(dist_huai = mean(dist_huai), temp = mean(temp)) %>%  
+  select(dist_huai, temp) %>% 
+  mutate(Position = as.factor(ifelse(dist_huai >= 0, "North", "South"))) %>% 
+  ggplot(aes(x = dist_huai, y = temp, color = Position)) +
+  geom_point() +
+  geom_vline(xintercept = 0) +
+  geom_smooth(method = "lm") +
+  labs(x = "Distance from Huai River (in degrees)", y = "Temperature", title = "Binned Scatterplot of Temperature with RD") +
+  theme_bw()
+
+
+# Plot binned data with RD for precipitation
+  hriver %>%
+  group_by(bins) %>% 
+  summarise(dist_huai = mean(dist_huai), prcp = mean(prcp)) %>%  
+  select(dist_huai, prcp) %>% 
+  mutate(Position = as.factor(ifelse(dist_huai >= 0, "North", "South"))) %>% 
+  ggplot(aes(x = dist_huai, y = prcp, color = Position)) +
+  geom_point() +
+  geom_vline(xintercept = 0) +
+  geom_smooth(method = "lm") +
+  labs(x = "Distance from Huai River (in degrees)", y = "Precipitation", title = "Binned Scatterplot of Precipitation with RD") +
+  theme_bw()
+  
+# Plot binned data with RD for wind speed
+  hriver %>%
+  group_by(bins) %>% 
+  summarise(dist_huai = mean(dist_huai), wspd = mean(wspd)) %>%  
+  select(dist_huai, wspd) %>% 
+  mutate(Position = as.factor(ifelse(dist_huai >= 0, "North", "South"))) %>% 
+  ggplot(aes(x = dist_huai, y = wspd, color = Position)) +
+  geom_point() +
+  geom_vline(xintercept = 0) +
+  geom_smooth(method = "lm") +
+  labs(x = "Distance from Huai River (in degrees)", y = "Wind Speed", title = "Binned Scatterplot of Wind Speed with RD") +
+  theme_bw()
+```
+
+
+**Question 4:**
+
+```{r, results='asis', error=FALSE, message=FALSE, warning=FALSE, echo=FALSE}
+# Run regression to calculate RD with linear model
+m1 <- lm(pm10 ~ dist_huai + north_huai, data = hriver)
+stargazer(m1, header=FALSE, type = 'latex')
+```
+
+```{r, error=FALSE, message=FALSE, warning=FALSE, echo=FALSE}
+# Use rdrobust to calculate the RD with linear model
+m2 <- rdrobust(hriver$pm10, hriver$dist_huai, c = 0, p = 1, h = 12, kernel = 'uniform', all = TRUE)
+summary(m2)
+```
+
+
+The regression discontinuity estimate using an OLS regression is 35.728, while the estimate using the rdrobust function is 34.237. These estimates are different possibly because of difference in the bandwidth size on the upper end of the cutoff. The data variance is larger above the cutoff so perhaps that is making the estimates slightly different. The fact that rdrobust also uses . The size of the standard errors, and therefore confidence intervals, are slightly larger for the rdrobust function than the OLS regression model when using the conventional method. However, for the Robust method the standard errors and confidence intervals are almost double the size of the OLS regression and the estimate for the regression discontinuity is much larger than the OLS model as well.
+
+
+**Question 5:**
+
+```{r, error=FALSE, message=FALSE, warning=FALSE, echo=FALSE}
+# Let rdrobust use optimal bandwidth approach
+m3 <- rdrobust(hriver$pm10, hriver$dist_huai, c = 0, p = 1, kernel = 'uniform')
+summary(m3)
+
+```
+
+The optimal bandwidth RD check above has a statistically significant positive estimate just as our RD estimate had. The optimal bandwidth is asymmetric and chooses the best bandwidth on both sides of the cutoff using the rdbwselect command.
+
+
+```{r, error=FALSE, message=FALSE, warning=FALSE, echo=FALSE}
+# Use triangular kernel to find RD
+m4 <- rdrobust(hriver$pm10, hriver$dist_huai, c = 0, p = 1, h = 12, kernel = 'triangular')
+summary(m4)
+```
+The triangular kernel model used above has a statistically significant positive estimate as our RD estimate had. The triangular kernel gives higher weights to values that are closer to the cutoff (similar to the shape of a triangle) so data from cities closer to the river are given more weight in this RD estimate.
+
+
+```{r, error=FALSE, message=FALSE, warning=FALSE, echo=FALSE}
+# Use quadratic regression instead of linear
+m5 <- rdrobust(hriver$pm10, hriver$dist_huai, c = 0, p = 2, h = 12, kernel = 'uniform')
+summary(m5)
+```
+
+The quadratic estimate above has a statistically significant and positive estimate. This model uses a quadratic line to measure the discontinuity on both sides of the cutoff instead of a linear line of best fit.
+
+
+```{r, error=FALSE, message=FALSE, warning=FALSE, echo=FALSE}
+# Compare group means to find RD
+m6 <- rdrobust(hriver$pm10, hriver$dist_huai, c = 0, p = 1, h = 0.75, kernel = 'uniform')
+summary(m6)
+```
+The difference-in-group means model above is just barely statistically significant and positive. It is taking a very small bandwidth above and below the cutoff and measuring the means on each side to find the discontinuity effect from the policy.
+
+
+Given these robustness checks it does appear that the range of estimates are reasonable (they are all around 35-50) and are statistically significant. These checks can increase our confidence that there is indeed a disconinuity effect similar to the one we found in our original model.
+
+**Question 6:**
+
+```{r, results='asis', error=FALSE, message=FALSE, echo=FALSE}
+
+
+# Manually inputting data for models m2 through m6
+results <- data.frame(
+  Model = c("OLS", "rdrobust", "optimal bw", "triangular", "quadratic", "means"),
+  Estimate = c(35.73, 34.237, 48.75, 38.81, 49.58, 38.96),
+  SE = c(8.82, 10.94, 18.05, 11.95, 16.78, 19.37),
+  CI = c("26.58-44.83", "12.80-55.67", "13.38-84.12", "15.39-62.23", "16.68-82.47", "0.99-76.93"),
+  Bandwidth = c(12.78, 12, 4.769, 12, 12, 0.75),
+  Observations = c(161, 142, 78, 142, 142, 9)
+)
+
+# Transpose the data frame
+transposed_results <- t(results)
+
+# Creating the table
+kable(transposed_results, caption = "Summary of RD Models", digits = c(2, 2))
+
+
+```
+
+
+**Question 7:**
+
+The identification assumption for this study is that the only reason for a discrete jump in pm10 close to the river is the policy for coal burning north and south of the Huai river. There is also a selection bias assumption, meaning that we assume locations could not sort themselves into the treated or untreated groups. Given that people's migration was limited in China at this time that assumption should be justified, so there would not be more or less pollution on either side of the river due to migration. The wind speed and temperature graphs from question 3 are consistent with these assumptions, but the precipitation graph does indicate a discrete jump at the cutoff. This could interfere with the identification assumptions because rainfall does impact the levels of pm10 in the air. This does show a cause for concern about the true effect of the increased pm10 levels that were north of the river, given that less rainfall could affect these levels just as the policy could have.
+```{r, error=FALSE, message=FALSE, warning=FALSE, echo=FALSE}
+# Use optimal bandwidth to test RD in the covariate smoothness tests
+m7 <- rdrobust(hriver$wspd, hriver$dist_huai, c = 0, h = 4.769, p = 1, kernel = 'uniform')
+summary(m7)
+
+# Use optimal bandwidth to test RD in the covariate smoothness tests
+m8 <- rdrobust(hriver$prcp, hriver$dist_huai, c = 0, h = 4.769, p = 1, kernel = 'uniform')
+summary(m8)
+
+# Use optimal bandwidth to test RD in the covariate smoothness tests
+m9 <- rdrobust(hriver$temp, hriver$dist_huai, c = 0, h = 4.769, p = 1, kernel = 'uniform')
+summary(m9)
+```
+
+Using the same bandwidth from the optimal bandwidth model, the RD of temperature and wind speed are not statistically significant and include 0 in their confidence intervals. However, the rainfall RD is slightly negative and statistically significant. This does cause a potential problem with our identification assumptions, although the difference does appear to be small.
+
+
+
+**Question 8:**
+
+```{r, error=FALSE, message=FALSE, warning=FALSE, echo=FALSE}
+
+# Constructing RDD object
+rd_model <- rddensity(hriver$dist_huai, c = 0)
+rdplotdensity(rd_model, hriver$dist_huai, noPlot = TRUE)
+
+
+```
+
+
+Manipulation in the case of regression discontinuity is when individuals are able to sort themselves above or below the cutoff, in the case of this study we should not have to worry about manipulation because the researchers had data on certain cities and those cities cannot change their geographical location to either be north or south of the cutoff. However, taking a look at the manipulation test it does look like there was some manipulation happening as there is a significant drop in cities that are just above the cutoff, but considering that this model simply shows cities that the researchers had data on we know that there was no manipulation because the cities could not sort themselves to be north or south of the cutoff.
+
+
+**Question 9:**
+
+The logic behind the placebo test in figure 4 of the paper is to show hypothetical RD estimates if the cutoff (or river in this case) were at different locations. For example, the estimates of -3 on the graph represent the RD estimates if the cutoff was at 3 degrees south of the river rather than on the river itself. This can improve our confidence that the results are significant and not just the RD models finding relationships that don't actually exist, especially because the river cutoff (at 0) is the only significant estimate that does not include 0.
+
+```{r, error=FALSE, message=FALSE, warning=FALSE, echo=FALSE}
+# Run regression to calculate RD with varying hypothetical river
+m10 <- lm(pm10 ~ I(dist_huai + 1), data = hriver)
+m11 <- lm(pm10 ~ I(dist_huai + 2), data = hriver)
+m12 <- lm(pm10 ~ I(dist_huai + 3), data = hriver)
+m13 <- lm(pm10 ~ I(dist_huai + 4), data = hriver)
+m14 <- lm(pm10 ~ I(dist_huai + 5), data = hriver)
+m15 <- lm(pm10 ~ I(dist_huai - 1), data = hriver)
+m16 <- lm(pm10 ~ I(dist_huai - 2), data = hriver)
+m17 <- lm(pm10 ~ I(dist_huai - 3), data = hriver)
+m18 <- lm(pm10 ~ I(dist_huai - 4), data = hriver)
+m19 <- lm(pm10 ~ I(dist_huai - 5), data = hriver)
+
+
+# Compile list of regressions into one variable
+models <- list(
+  "0" = m1,
+  "1" = m10,
+  "2" = m11,
+  "3" = m12, 
+  "4" = m13,
+  "5" = m14,
+  "-1" = m15,
+  "-2" = m16,
+  "-3" = m17,
+  "-4" = m18,
+  "-5" = m19)
+
+# Create coefficient plot
+ggcoef_compare(models, significance = 1, significance_labels = " ")
+```
+
+
+**Question 10:**
+
+The RD's run in this project are sharp tests of the policy because we are not controlling for other covariates in the model because we have perfect compliance in the cutoff at the river. Every household north of the river had access to coal heaters while all of those south had no access as a result of the policy. The RD's in the Ebenstein et al paper use fuzzy tests because they are looking at the effect of the policy around the cutoff but pollution exists on both sides of the cutoff. This is because individuals on either side of the cutoff should be almost identical other than the exposure to the treatment. Our RD estimate of the pm10 concentration as a result of the policy was simply a method to test for life expectancy in the paper. This estimate established that the policy had a positive impact on pollution for those who had coal heaters, which allowed the researchers to measure the effect of pollution on individuals life expectancy. Columns 2 and 3 from table 3 in the paper are LATEs because they are measuring the effect of pm10 only on those who were affected by the policy. These estimates should be taken with a grain of salt because they are difficult to generalize to the population that are not near the policy cutoff. 
+
+**Reference:**
+
+Chen, Y., Ebenstein, A., Greenstone, M., & Li, H. (2013). Evidence on the impact of sustained exposure to air pollution on life expectancy from China’s Huai River policy. Proceedings of the National Academy of Sciences, 110(32), 12936-12941.
