@@ -1,0 +1,375 @@
+---
+title: "Project-002"
+author: "William Grossman"
+date: "2024-05-13"
+output: html_document
+---
+
+```{r setup, warning=FALSE, message=FALSE, error=FALSE}
+setwd("C:/Users/justg/Dropbox (University of Oregon)")
+
+# Load Packages
+library(tidymodels)
+library(tidyverse)
+library(magrittr)
+library(janitor)
+library(here)
+library(skimr)
+library(glmnet)
+
+# Load the data
+election <- read.csv("election-2016.csv")
+
+# Create new column with character values
+election <- election %>%
+  mutate(repub_result_2016 = if_else(i_republican_2016 == 1, "won", "lost"))
+```
+# Part 0:
+
+## Question 0:
+
+```{r skim and visualize, warning=FALSE}
+# Skim data
+skim(election)
+
+# Make histogram
+ggplot(election, aes(x = i_republican_2016)) +
+  geom_histogram(binwidth = 0.5, fill = "blue", color = "black") +
+  labs(title = "Number of Counties Republicans Won in 2016", x = "Republican Won County", y = "Frequency") +
+  theme_minimal()
+
+# Summarize the data
+counts <- data.frame(
+  Election_Year = c("i_republican_2012", "i_republican_2016"),
+  Count = c(sum(election$i_republican_2012 == 1), sum(election$i_republican_2016 == 1))
+)
+
+# Create the bar chart
+ggplot(counts, aes(x = Election_Year, y = Count, fill = Election_Year)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Comparison of Republican Support in 2012 and 2016",
+       x = "Election Year",
+       y = "Count of Republican Counties Won") +
+  theme_minimal()
+
+
+# Summarize the data
+counts2 <- data.frame(
+  Category = c("Republican_2012", "Democrat_2012"),
+  Count = c(sum(election$n_votes_republican_2012),
+            sum(election$n_votes_democrat_2012))
+)
+
+# Create the bar chart
+ggplot(counts2, aes(x = Category, y = Count, fill = Category)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Comparison of Votes in 2012",
+       x = "Category",
+       y = "Number of Votes") +
+  theme_minimal() +
+  scale_fill_manual(values = c("Republican_2012" = "red", "Democrat_2012" = "blue"))
+
+# Count the number of counties that switched from Republican in 2012 to Democrat in 2016
+switched_counties_reptodem <- sum(election$i_republican_2012 == 1 & election$i_republican_2016 == 0)
+
+# Count the number of counties that switched from Democrat in 2012 to Republican in 2016
+switched_counties_demtorep <- sum(election$i_republican_2012 == 0 & election$i_republican_2016 == 1)
+
+# Create a data frame with the counts
+switch_counts <- data.frame(
+  Switch = c("Rep to Dem", "Dem to Rep"),
+  Count = c(switched_counties_reptodem, switched_counties_demtorep)
+)
+
+
+# Create the bar chart
+ggplot(switch_counts, aes(x = Switch, y = Count, fill = Switch)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Flipped Counties from 2012 to 2016 Elections",
+       x = "Flipped Counties",
+       y = "Number of Counties") +
+  theme_minimal() +
+  scale_fill_manual(values = c("Rep to Dem" = "blue", "Dem to Rep" = "red"))
+
+# Calculate the mean college graduates in counties that vote democrat and republican
+mean_bachelors_rep <- mean(election$pop_pct_bachelors[election$i_republican_2012 == 1], na.rm = TRUE)
+mean_bachelors_dem <- mean(election$pop_pct_bachelors[election$i_republican_2012 == 0], na.rm = TRUE)
+
+# Create a data frame with the means
+mean_counts <- data.frame(
+  Party = c("Republican", "Democrat"),
+  Mean = c(mean_bachelors_rep, mean_bachelors_dem)
+)
+
+# Create the bar chart
+ggplot(mean_counts, aes(x = Party, y = Mean, fill = Party)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Mean Percentage of Population with Bachelor's Degree",
+       x = "County Party Affiliation",
+       y = "Mean Percentage of County Population with Bachelor's Degree in 2012 Election") +
+  theme_minimal() +
+  scale_fill_manual(values = c("Republican" = "red", "Democrat" = "blue"))
+
+```
+
+Skimming the data showed that the majority of counties vote republican in the 2012 and 2016 elections. However, comparing the number of votes in the 2012 election shows that democrats received more votes even with the huge disparity in the number of counties voting republican. This would suggest that many of the counties voting republican are low population counties while many high density counties are voting democrat. This will surely be an important feature to include in the model.
+
+I also wanted to look at how many counties actually changed the party they voted for from one election to the next. The figures show that a relatively small proportion of counties flipped from one party to the other (less than 10 percent), but the majority of the counties that did flip went in republicans favor. This persistence in voting preferences for most counties should also be considered when making the model.
+
+Lastly, I wanted to check education as a potential predictor for how the county voted. I cannot show that the difference is statistically significant in the bar graph, but there does appear to be some separation in college education between counties that vote republican versus those that vote democrat.
+
+```{r create interaction variables, warning=FALSE}
+
+# Create educated population variable
+election$college_pct <- ((election$pop_pct_bachelors * election$pop) / 100)
+
+
+```
+
+
+
+# Part 1:
+
+```{r make recipe for lasso and elasticnet, warning=FALSE}
+# Convert character to factor
+election$county <- as.factor(election$county)
+election$state <- as.factor(election$state)
+election$repub_result_2016 <- as.factor(election$repub_result_2016)
+
+# 5-fold CV on the training dataset
+set.seed(1527)
+credit_cv = election %>% vfold_cv(v = 5)
+
+
+# Make recipe with feature variables I want to include in model
+recipe_lasso =
+  recipe(i_republican_2016 ~ fips + county + state + pop + pop_pct_above65 + pop_pct_black + pop_pct_white + pop_pct_bachelors + pop_pct_poverty + n_votes_republican_2012 + n_votes_democrat_2012 + i_republican_2012, data = election) |>
+# Define the role of ID variables
+  update_role(fips, new_role = 'ID') |>
+  update_role(county, new_role = 'ID') |>
+  update_role(state, new_role = 'ID') |>
+# Try to take care of categorical issues
+  step_string2factor(all_string_predictors()) |>
+# Dummies
+  step_zv(all_nominal_predictors()) |>
+  step_dummy(all_nominal_predictors()) |>
+# Normalize variables
+  step_normalize(all_numeric_predictors()) |>
+# Drop near-zero-variance variables and linear combinations
+  step_corr(all_numeric_predictors(), threshold = 0.9) |>
+  step_nzv(all_numeric_predictors()) |>
+  step_lincomb(all_numeric_predictors()) |>
+  step_zv(all_numeric_predictors())
+```
+
+```{r make lasso workflow, warning=FALSE}
+# The model (make sure to set penalty to tune and mixture=1)
+model_lasso =
+  linear_reg(penalty = tune(), mixture = 1) |>
+  set_mode('regression') |>
+  set_engine('glmnet')
+# Workflow
+wf_lasso =
+  workflow() |>
+  add_model(model_lasso) |>
+  add_recipe(recipe_lasso)
+```
+
+
+## Question 1:
+
+```{r fit the lasso model to find best penalty using 5 fold CV, warning=FALSE}
+# Fit the lasso model
+fit_lasso =
+  wf_lasso |>
+  tune_grid(
+    resamples = credit_cv,
+    metrics = metric_set(rmse),
+    grid = grid_regular(penalty(), levels = 50)
+  )
+# How did we do?
+fit_lasso |> show_best(metric = 'rmse', n = 10)
+```
+
+
+## Question 2:
+The penalty for my best model is very low, near zero, which yields an RMSE of ~0.211.
+
+
+## Question 3:
+I used RMSE to describe my best model because I cannot use accuracy to tune a linear lasso model as that would only work for classification models, like logistic regression or a logistic lasso model. However, our outcome variable is binary so using either logistic or logistic lasso would be a better choice for our model in this setting. Accuracy or precision would be better metrics for measuring our best model, but since this is a linear model we must use RMSE for now.
+
+## Question 4:
+
+```{r make elasticnet model and workflow, warning=FALSE}
+# Our range of λ and α
+lambdas = 10^seq(from = 5, to = -2, length = 1e2)
+alphas = seq(from = 0, to = 1, by = 0.1)
+# Define the elasticnet model
+model_net = linear_reg(
+  penalty = tune(), mixture = tune()
+) %>% set_engine("glmnet")
+# Define our workflow
+workflow_net = workflow() %>%
+  add_model(model_net) %>% add_recipe(recipe_lasso)
+# CV elasticnet with our range of lambdas
+cv_net = 
+  workflow_net %>%
+  tune_grid(
+    credit_cv,
+    grid = expand_grid(mixture = alphas, penalty = lambdas),
+    metrics = metric_set(rmse)
+  )
+
+# How did we do?
+cv_net |> show_best(metric = 'rmse', n = 10)
+```
+
+## Question 5:
+Alpha and lambda are the hyperparameters for an elasticnet model. Alpha controls how much emphasis the model places on either Ridge regularization or Lasso regularization, alpha equal to 0 would just be a Ridge regression and alpha of 1 would simply be a Lasso regression. In my case, the best model has an alpha of 0.6, which means the model is mostly using Lasso regularization and using some Ridge regularization. Lambda controls the overall strength of the regularization, or penalty, that we give the model. In my model it is very low, so whether the alpha is 0 or 1 it makes little difference because the magnitude of the penalty is so small.
+
+
+# Part 2: 
+
+
+## Question 6:
+
+
+```{r Adjust recipe for logistic model, warning=FALSE}
+# Make recipe with feature variables I want to include in model
+recipe_logistic =
+  recipe(repub_result_2016 ~ fips + county + state + pop + pop_pct_above65 + pop_pct_black + pop_pct_white + pop_pct_bachelors + pop_pct_poverty + n_votes_republican_2012 + n_votes_democrat_2012 + i_republican_2012, data = election) |>
+# Define the role of ID variables
+  update_role(fips, new_role = 'ID') |>
+  update_role(county, new_role = 'ID') |>
+  update_role(state, new_role = 'ID') |>
+# Try to take care of categorical issues
+  step_string2factor(all_string_predictors()) |>
+# Dummies
+  step_zv(all_nominal_predictors()) |>
+  step_dummy(all_nominal_predictors()) |>
+# Normalize variables
+  step_normalize(all_numeric_predictors()) |>
+# Drop near-zero-variance variables and linear combinations
+  step_corr(all_numeric_predictors(), threshold = 0.9) |>
+  step_nzv(all_numeric_predictors()) |>
+  step_lincomb(all_numeric_predictors()) |>
+  step_zv(all_numeric_predictors())
+
+```
+
+
+
+```{r Logistic regression model, warning=FALSE}
+
+# The logistic model 
+model_logistic =
+  logistic_reg(penalty = 0.1, mixture = NULL) |>
+  set_mode('classification') |>
+  set_engine('glmnet')
+# Workflow
+wf_logistic =
+  workflow() |>
+  add_model(model_logistic) |>
+  add_recipe(recipe_logistic)
+
+```
+
+
+
+```{r Fit logistic model and see accuracy, warning=FALSE, message=FALSE, error=FALSE}
+# Fit the logistic model
+fit_logistic =
+  wf_logistic |>
+  tune_grid(
+    resamples = credit_cv,
+    metrics = metric_set(accuracy, specificity, precision, sensitivity, roc_auc),
+    grid = grid_regular(penalty(), levels = 50)
+  )
+# How did we do?
+fit_logistic |> show_best(metric = 'accuracy', n = 1)
+fit_logistic |> show_best(metric = 'specificity', n = 1)
+fit_logistic |> show_best(metric = 'precision', n = 1)
+fit_logistic |> show_best(metric = 'sensitivity', n = 1)
+fit_logistic |> show_best(metric = 'roc_auc', n = 1)
+```
+
+
+
+## Question 7:
+My cross-validated accuracy of my non-tuned logistic model is about 85.5 percent.
+
+## Question 8:
+The model's accuracy of 85.5 percent is fair at best. The model does perform better than simply guessing republicans won for every county, which would produce an accuracy of ~84.2 percent. But it is only performing marginally better so does not look like a strong model when only looking at accuracy.
+
+## Question 9:
+The metric my model performed the best with was specificity, which came in around 98.2 percent. This measures the share of negative outcomes that were correctly guessed by the model (TN/TN+FP). This metric being so high was probably helped by the fact that our false positive count would inherently be low because so many more counties voted republican than democrat counties. The worst metric for the model was sensitivity of about 18.9 percent. Sensitivity measures the share of positive outcomes that the model guessed correctly (TP/TP+FN). The reason sensitivity was so low is related to why specificity was so high. The majority of counties voted republican so any negative guess was more likely to be wrong, which produced a high amount of false negatives and reduced sensitivity. Precision had some problems and the model was not able to predict any TP or FP for some of the results. 
+
+# Part 3:
+
+
+## Question 10:
+
+```{r Make lasso logistic model, warning=FALSE}
+# The logistic model 
+model_logistic_lasso =
+  logistic_reg(penalty = tune(), mixture = 1) |>
+  set_mode('classification') |>
+  set_engine('glmnet')
+# Workflow
+wf_logistic_lasso =
+  workflow() |>
+  add_model(model_logistic_lasso) |>
+  add_recipe(recipe_logistic)
+```
+
+
+
+```{r, warning=FALSE, message=FALSE, error=FALSE}
+# Fit the logistic model
+fit_logistic_lasso =
+  wf_logistic_lasso |>
+  tune_grid(
+    resamples = credit_cv,
+    metrics = metric_set(accuracy, specificity, precision, sensitivity, roc_auc),
+    grid = grid_regular(penalty(), levels = 50)
+  )
+# How did we do?
+fit_logistic_lasso |> show_best(metric = 'accuracy', n = 10)
+fit_logistic_lasso |> show_best(metric = 'specificity', n = 10)
+fit_logistic_lasso |> show_best(metric = 'precision', n = 10)
+fit_logistic_lasso |> show_best(metric = 'sensitivity', n = 10)
+fit_logistic_lasso |> show_best(metric = 'roc_auc', n = 10)
+```
+
+
+## Question 11:
+The logistic lasso model had a much better performance for all metrics than the logistic model that was not tuning. There was a massive improvement in sensitivity, which is about 87.8 percent in the logistic lasso model compared to 18.9 percent previously. The accuracy also increased to 95.4 percent, which is a noticeable improvement to the model when compared to guessing yes for every single county.
+
+## Question 12:
+Moving to a logistic elasticnet could slightly improve the model by tuning how much of ridge versus lasso penalty our model will use. This could produce a more accurate model if the tuned elasticnet model's alpha is somewhere between 0 and 1, meaning the best model is a mixture of the two rather than just a pure ridge or lasso regression.
+
+# Part 4:
+
+
+
+## Question 13:
+We might prefer lasso to elasticnet because lasso can help us select which variables we should include in our model. Lasso inherently assumes that some variables should not be included so it can be used to exclude variables that are not helpful to the model. However, elasticnet is more flexible than lasso and can use some lasso regularization while also using some ridge regularization. This can give us a more accurate model, but does not allow us to use it for feature selection like lasso.
+
+## Question 14:
+Linear and logistic models are generally used for either continuous outcomes or classification outcomes respectively. The outputs can also be different, linear regression will give an output between negative infinity and positive infinity and shows the relationship between the dependent and independent variables. Logistic regression has an output between 0 and 1 and shows the probability of having the paticular outcome. Linear models also assume a linear relationship between variables where logistic regression assumes a non-linear relationship.
+
+Both models do use linear equations, but in the logistic model the equation is the exponent of $e$ plus 1 under 1.
+
+## Question 15:
+If I worked for either party I think accuracy would be important to include, but I think including precision for a republican candidate would be important and assessing the negative predictive value would be better for a democrat candidate. Given the context that a republican won county is a positive and a democrat won county is a negative, the precision would tell a republican candidate how often the model is correct when predicting they would win a given county and the negative predictive value would do the same for a democrat candidate. Since the candidates would want to be sure they can trust the model when it says they will win a state, I think these metrics would be the most important to assess the models performance.
+
+## Question 16:
+The model's  test accuracy would apply to the 2020 and 2024 elections if the features used in my previous models still had a significant correlation with how counties voted in 2020 and 2024. It is also important to remember that the vast majority of counties vote for the same county in every election and it is only a small percentage of counties that might flip the county that they vote for. So those are the counties that candidates would most like to have a high accuracy for, but they are also he toughest to correctly predict.
+
+## Question 17:
+Because we had results from the 2012 and 2016 election it would have been better to separate our data into training and testing for the 2012 and 2016 elections respectively. This is because the way counties vote are dependent on how they voted previously, so by not separating the two elections into training and testing data based on the election year we can train on data from 2016 while testing on data from 2012. This is a problem because the election in 2016 would not have influenced the election of 2012, but the 2012 election would certainly impact the outcome of the 2016 election.
+
+## Question 18:
+I think a very interesting concept is ensembles such as random forests. I find them interesting because they take decision trees, which are rather weak models and cannot even construct a linear relationship, and make them robust by taking the average of many of them. It shows the power of averages and how data scientists can make a very good predictive model by simply adjusting a weaker model slightly.
+

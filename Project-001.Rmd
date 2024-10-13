@@ -1,0 +1,413 @@
+---
+title: "Project-001"
+author: "William Grossman"
+date: "2024-05-03"
+output: html_document
+---
+
+```{r setup, include=FALSE, warning=FALSE, error=FALSE}
+setwd("C:/Users/justg/Dropbox (University of Oregon)")
+
+# Load Packages
+library(pacman)
+p_load(tidyverse, magrittr, skimr, janitor, scales, car, caret, randomForest, Metrics, magrittr, kknn, modeldata, recipes, rsample, tidymodels, naniar)
+
+
+
+# Read in data
+train_df <- read.csv("Project-000-files/train.csv")
+test_df <- read.csv("Project-000-files/test.csv")
+
+# Clean variable names
+clean_names(train_df, case = 'big_camel')
+clean_names(test_df, case = 'big_camel')
+
+# Change columns to numeric
+train_df$SalePrice <- as.double(train_df$SalePrice)
+train_df$X1stFlrSF <- as.double(train_df$X1stFlrSF)
+train_df$X2ndFlrSF <- as.double(train_df$X2ndFlrSF)
+
+test_df$X1stFlrSF <- as.double(test_df$X1stFlrSF)
+test_df$X2ndFlrSF <- as.double(test_df$X2ndFlrSF)
+
+
+
+
+```
+
+
+
+
+```{r clean data}
+train_df$PoolQC <- train_df$PoolQC %>% replace_na("None")
+train_df$MiscFeature <- train_df$MiscFeature %>% replace_na("None")
+train_df$Alley <- train_df$Alley %>% replace_na("None")
+train_df$Fence <- train_df$Fence %>% replace_na("None")
+train_df$FireplaceQu <- train_df$FireplaceQu %>% replace_na("None")
+train_df$Electrical <- ifelse(is.na(train_df$Electrical), "SBrkr", train_df$Electrical)
+
+
+train_df$GarageYrBlt <- impute_mean(train_df$GarageYrBlt)
+train_df$LotFrontage <- impute_mean(train_df$LotFrontage)
+train_df$MasVnrArea <- impute_mean(train_df$MasVnrArea)
+
+
+test_df$PoolQC <- test_df$PoolQC %>% replace_na("None")
+test_df$MiscFeature <- test_df$MiscFeature %>% replace_na("None")
+test_df$Alley <- test_df$Alley %>% replace_na("None")
+test_df$Fence <- test_df$Fence %>% replace_na("None")
+test_df$FireplaceQu <- test_df$FireplaceQu %>% replace_na("None")
+test_df$Electrical <- ifelse(is.na(test_df$Electrical), "SBrkr", test_df$Electrical)
+
+
+
+
+test_df$GarageYrBlt <- impute_mean(test_df$GarageYrBlt)
+test_df$LotFrontage <- impute_mean(test_df$LotFrontage)
+test_df$MasVnrArea <- impute_mean(test_df$MasVnrArea)
+
+
+train <- train_df
+
+# Identify character columns
+char_cols <- sapply(test_df, is.character)
+
+# Convert character columns to factor
+test_df[char_cols] <- lapply(test_df[char_cols], as.factor)
+
+
+```
+
+
+
+```{r}
+# Make recipe
+recipe_all <- recipe(SalePrice ~ ., data = train)
+
+# Mean imputation for all numeric predictors
+recipe_all %>% step_impute_mean(all_predictors() & all_numeric())
+
+
+# Make new dataset with cleaned variables
+train_clean = recipe_all %>% 
+  step_impute_mean(all_predictors() & all_numeric()) %>% 
+  prep() %>% 
+  juice()
+
+# Set the seed
+set.seed(1527)
+
+# Create the split (80-20 split)
+train_split = train_clean %>% initial_split(prop = 0.8)
+
+# Check the output
+train_split
+
+
+# Grab the training subset
+ames_train = train_split %>% training()
+
+# Grab the testing subset
+ames_test = train_split %>% testing()
+
+# Check dimensions of the datasets
+dim(train_clean); dim(ames_train); dim(ames_test)
+```
+
+
+
+```{r}
+# Set seed (for repeatability)
+set.seed(189)
+
+# 5-fold CV on the training dataset (from above)
+ames_cv = ames_train %>% vfold_cv(v = 5)
+
+# What is the output?
+ames_cv %>% tidy()
+
+# Defining a data-processing recipe for the credit data
+ames_recipe = 
+    recipe(SalePrice ~ ., data = ames_train) %>%
+    # Mean imputation for numeric predictors
+    step_impute_mean(all_predictors() & all_numeric()) %>% 
+    # KNN imputation for categorical predictors
+    step_impute_knn(all_predictors() & all_nominal(), neighbors = 5) %>%
+    # Create dummies for categorical variables
+    step_dummy(all_predictors() & all_nominal()) 
+
+# Check the result
+ames_recipe
+```
+
+
+
+```{r}
+# Define our linear regression model (with 'lm' engine)
+model_lm = 
+    linear_reg() %>%
+    set_mode("regression") %>%
+    set_engine("lm")
+# Check the result
+model_lm
+
+# Make a workflow
+workflow() %>%
+    add_model(model_lm) %>%
+    add_recipe(ames_recipe)
+```
+
+
+```{r Question 5 models}
+ames_train$MSSubClass <- as.double(ames_train$MSSubClass)
+ames_train$LotArea <- as.double(ames_train$LotArea)
+ames_train$BsmtUnfSF <- as.double(ames_train$BsmtUnfSF)
+ames_train$GarageCars <- as.double(ames_train$GarageCars)
+ames_train$WoodDeckSF <- as.double(ames_train$WoodDeckSF)
+ames_train$OverallQual <- as.double(ames_train$OverallQual)
+ames_train$OverallCond <- as.double(ames_train$OverallCond)
+ames_train$YearBuilt <- as.double(ames_train$YearBuilt)
+
+
+
+# Define 5-fold cross-validation
+ctrl <- trainControl(method = "cv", number = 5)
+
+# Train simple linear regression model using 5 fold cv
+lm_model_15 <- train(SalePrice ~ MSSubClass+LotArea+BsmtUnfSF+
+                    X1stFlrSF+X2ndFlrSF+GarageCars+
+                    WoodDeckSF, 
+                    data=ames_train,
+                    method = 'lm',
+                    trControl = ctrl)
+
+
+# Train rf model using 5 fold cv
+model_rf <- train(SalePrice ~ MSSubClass+LotArea+BsmtUnfSF+
+                    X1stFlrSF+X2ndFlrSF+GarageCars+
+                    WoodDeckSF + OverallQual + OverallCond +
+                    YearBuilt + BldgType, 
+                    data=ames_train, 
+                    na.action = na.roughfix,
+                    method = 'rf',
+                    trControl = ctrl)
+```
+
+
+
+
+
+
+```{r Test Q5 linear model}
+
+# Predict using the test set for linear model
+prediction_lm <- predict(lm_model_15, ames_test)
+model_output_lm <- cbind(ames_test, prediction_lm)
+
+# Log the sales price
+model_output_lm$log_prediction <- log(model_output_lm$prediction)
+model_output_lm$log_SalePrice <- log(model_output_lm$SalePrice)
+
+#Test with RMSE
+Metrics::rmse(model_output_lm$log_SalePrice, model_output_lm$log_prediction)
+```
+
+```{r Test Q5 rf model}
+# Predict using the test set for rf
+prediction_rf <- predict(model_rf, ames_test)
+model_output_rf <- cbind(ames_test, prediction_rf)
+
+# Log the sales price
+model_output_rf$log_prediction <- log(model_output_rf$prediction)
+model_output_rf$log_SalePrice <- log(model_output_rf$SalePrice)
+
+#Test with RMSE
+Metrics::rmse(model_output_rf$log_SalePrice, model_output_rf$log_prediction)
+```
+
+
+
+
+```{r Question 6 model}
+library(MASS)
+# Fit the full model 
+full.model <- lm(SalePrice ~ MSSubClass+LotArea+BsmtUnfSF+
+                    X1stFlrSF+X2ndFlrSF+GarageCars+
+                    WoodDeckSF + OverallQual + OverallCond +
+                    YearBuilt + BldgType + Condition1 + 
+                    Foundation + Heating + YearRemodAdd + Electrical +
+                    PoolArea + GrLivArea, data = ames_train)
+# Forward stepwise regression model
+step.model <- stepAIC(full.model, direction = "forward", 
+                      trace = FALSE)
+summary(step.model)
+
+```
+
+
+
+
+```{r Test Q6 model}
+# Predict using the test set for forward step model
+prediction_step <- predict(step.model, ames_test)
+model_output_step <- cbind(ames_test, prediction_step)
+
+# Calculate the mean of the log_prediction column excluding row 192
+mean_prediction <- mean(model_output_step$prediction_step[-194])
+
+# Change the value in row 192 of the log_prediction column to the mean
+model_output_step$prediction_step[194] <- mean_prediction
+
+# Log the sales price
+model_output_step$log_prediction <- log(model_output_step$prediction_step)
+model_output_step$log_SalePrice <- log(model_output_step$SalePrice)
+
+
+# Test with RMSE
+Metrics::rmse(model_output_step$log_SalePrice, model_output_step$log_prediction)
+
+```
+
+
+```{r Question 7 find correct lambda for lasso}
+library(glmnet)
+library(caret)
+
+# Perform 10-fold cross-validation to select lambda ---------------------------
+lambdas_to_try <- 10^seq(-3, 5, length.out = 100)
+# Use 5 fold cross validation to find best lambda value
+lasso_cv <- cv.glmnet(x = ames_train %>% dplyr::select(MSSubClass,LotArea,BsmtUnfSF,
+                    X1stFlrSF,X2ndFlrSF,GarageCars,
+                    WoodDeckSF, OverallQual, OverallCond,
+                    YearBuilt, BldgType, Condition1, 
+                    Foundation, Heating, YearRemodAdd,
+                    PoolArea, GrLivArea) %>% as.matrix(),
+                      y = ames_train$SalePrice,
+                      alpha = 1, lambda = lambdas_to_try,
+                      standardize = TRUE, nfolds = 5)
+# Plot cross-validation results
+plot(lasso_cv)
+lasso_cv
+```
+
+
+
+
+
+```{r Use penalty found earlier in lasso model}
+my_control <-trainControl(method="cv", number=5)
+
+lasso_mod <- train(x=train %>% dplyr::select(MSSubClass,LotArea,BsmtUnfSF,
+                    X1stFlrSF,X2ndFlrSF,GarageCars,
+                    WoodDeckSF, OverallQual, OverallCond,
+                    YearBuilt, 
+                    YearRemodAdd) %>% as.matrix(), 
+                   y=train$SalePrice, 
+                   method='glmnet', 
+                   trControl= my_control, 
+                   tuneGrid=expand.grid(alpha = 1, lambda = 955)) 
+
+
+# Predict using the test set for lasso
+prediction_lasso <- predict(lasso_mod, train_df)
+model_output_lasso <- cbind(train_df, prediction_lasso)
+
+# Log the sales price
+model_output_lasso$log_prediction <- log(model_output_lasso$prediction_lasso)
+model_output_lasso$log_SalePrice <- log(model_output_lasso$SalePrice)
+
+#Test with RMSE
+Metrics::rmse(model_output_lasso$log_SalePrice, model_output_lasso$log_prediction)
+```
+
+
+```{r predict using lm model}
+# Predict using the linear model
+pred_lm <- predict(object = lm_model_15, newdata = test_df, na.action = na.roughfix)
+
+# Create the submission dataset
+submit_df_lm = data.frame(
+    Id = test_df$Id,
+    SalePrice = pred_lm
+)
+
+# Count the number of NAs in the SalePrice column
+sum(is.na(submit_df_lm$SalePrice))
+
+```
+
+```{r predict using rf model}
+# Predict using the random forest model
+pred_rf <- predict(object = model_rf, newdata = test_df, na.action = na.roughfix)
+
+# Create the submission dataset
+submit_df_rf = data.frame(
+    Id = test_df$Id,
+    SalePrice = pred_rf
+)
+
+# Count the number of NAs in the SalePrice column
+sum(is.na(submit_df_rf$SalePrice))
+
+# Save the datset
+write_csv(x = submit_df_rf, file = "rf_model.csv")
+```
+
+
+```{r predict using forward stepwise}
+# Predict using the forward step model
+pred_step <- predict(object = step.model, newdata = test_df, na.action = na.roughfix)
+
+# Create the submission dataset
+submit_df_step = data.frame(
+    Id = test_df$Id,
+    SalePrice = pred_step
+)
+
+# Count the number of NAs in the SalePrice column
+sum(is.na(submit_df_step$SalePrice))
+
+# Save the datset
+write_csv(x = submit_df_step, file = "step_model.csv")
+```
+
+```{r predict using lasso model}
+# Predict using the lasso model
+pred_lasso <- predict(object = lasso_mod, newdata = test_df, na.action = na.roughfix)
+
+# Create the submission dataset
+submit_df_lasso = data.frame(
+    Id = test_df$Id,
+    SalePrice = pred_lasso
+)
+
+# Calculate the mean of non-missing values in the SalePrice column
+mean_sale_price <- mean(submit_df_lasso$SalePrice, na.rm = TRUE)
+
+# Impute NAs with the mean
+submit_df_lasso$SalePrice[is.na(submit_df_lasso$SalePrice)] <- mean_sale_price
+
+# Count the number of NAs in the SalePrice column
+sum(is.na(submit_df_lasso$SalePrice))
+
+# Save the datset
+write_csv(x = submit_df_lasso, file = "lasso_model.csv")
+```
+
+
+
+
+# Reflection
+
+**Questions 9 & 10** 
+All of my submission are under my original "team name", William Grossman. My random forest model that I adapted from the last assignment did slightly better and had a score of 0.15620 on the leaderboard. This score lines up very well with the RMSE I was testing before submission which was also about 0.15. My lasso model seemed to have a problem with either the data structure or the way I constructed the model because it had a RMSE of 5.71003, which is similar to the RMSE that I got when testing the model before submission. My most surprising result was for the forward-step model. I was estimating a fairly low RMSE of 0.22112 before I submitted my answers, but that model actually got a score of 0.54757 on Kaggle. 
+
+
+
+**Question 11**
+I don't think we are violating many of the assumptions such as having randomness for the selection of our different folds and homogeneity between folds. The only "assumption" that we might be violating is independence, meaning that each data point does not affect any other data points. The housing market is certainly affected by the price of other houses in the neighborhood or city so I am not confident that our data are completely independent from one another. If new construction caused housing prices in one neighborhood to rise than that would be a prime example of data points affecting one another.
+
+
+**Question 12**
+It seems like random forest models are the most accurate, but I have noticed they are also more computationally intensive than the other models I have used. My guess is that we can still get more accuracy from a different model (such as deep learning) but these models will probably continue to be more computationally intensive and require more complex and lengthy testing and modeling.
+

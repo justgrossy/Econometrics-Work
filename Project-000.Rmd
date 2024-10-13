@@ -1,0 +1,178 @@
+---
+title: "Project-000"
+author: "William Grossman"
+date: "2024-04-17"
+output: html_document
+---
+
+```{r setup, include=FALSE, warning=FALSE, error=FALSE}
+setwd("C:/Users/justg/Dropbox (University of Oregon)")
+
+# Load Packages
+library(pacman)
+p_load(tidyverse, magrittr, skimr, janitor, scales, car, caret, randomForest, Metrics)
+
+
+# Read in data
+train_df <- read.csv("Project-000-files/train.csv")
+test_df <- read.csv("Project-000-files/test.csv")
+```
+
+
+```{r}
+# View data
+view(test_df)
+view(train_df)
+
+# See data structure
+str(test_df)
+str(train_df)
+
+# View dimensions of datasets
+dim(test_df)
+dim(train_df)
+
+# Skim data
+skim(test_df)
+skim(train_df)
+
+# Clean variable names
+clean_names(train_df, case = 'big_camel')
+clean_names(test_df, case = 'big_camel')
+
+# Change columns to numeric
+train_df$SalePrice <- as.double(train_df$SalePrice)
+train_df$X1stFlrSF <- as.double(train_df$X1stFlrSF)
+train_df$X2ndFlrSF <- as.double(train_df$X2ndFlrSF)
+
+test_df$X1stFlrSF <- as.double(test_df$X1stFlrSF)
+test_df$X2ndFlrSF <- as.double(test_df$X2ndFlrSF)
+
+
+# Convert to factor
+test_df$BldgType <- as.factor(test_df$BldgType)
+
+
+# Convert some columns to dummy variables
+train_df$paved[train_df$Street == "Pave"] <- 1
+train_df$paved[train_df$Street != "Pave"] <- 0
+
+train_df$regshape[train_df$LotShape == "Reg"] <- 1
+train_df$regshape[train_df$LotShape != "Reg"] <- 0
+
+# Convert to double
+train_df$Street <- as.double(train_df$Street)
+train_df$LotShape <- as.double(train_df$LotShape)
+
+#Fix some NAs
+train_df$GarageYrBlt[is.na(train_df$GarageYrBlt)] <- 0
+train_df$MasVnrArea[is.na(train_df$MasVnrArea)] <- 0
+train_df$LotFrontage[is.na(train_df$LotFrontage)] <- 0
+
+```
+
+
+```{r}
+# Visualize some data
+ggplot(train_df, aes(x = X1stFlrSF, y = SalePrice)) +
+  geom_point() +
+  geom_smooth(method = 'lm')
+
+ggplot(train_df, aes(x = X2ndFlrSF, y = SalePrice)) +
+  geom_point() +
+  geom_smooth(method = 'lm')
+
+ggplot(train_df,aes(x = SalePrice)) +
+  geom_histogram() +
+  scale_x_continuous(labels = label_number())
+
+scatterplot(SalePrice ~ YearBuilt, data=train_df,  xlab="Year Built", ylab="Sale Price", grid=FALSE)
+```
+
+
+```{r}
+# Partition data
+outcome <- train_df$SalePrice
+
+partition <- createDataPartition(y=outcome,
+                                 p=.5,
+                                 list=F)
+training <- train_df[partition,]
+testing <- train_df[-partition,]
+
+# Run simple linear regression model using important variables
+lm_model_15 <- lm(SalePrice ~ MSSubClass+LotArea+BsmtUnfSF+
+                    X1stFlrSF+X2ndFlrSF+GarageCars+
+                    WoodDeckSF, data=training)
+summary(lm_model_15)
+
+
+```
+
+
+```{r}
+
+training$BldgType <- as.factor(training$BldgType)
+testing$BldgType <- as.factor(testing$BldgType)
+
+
+
+# Use random forest to train a model
+model_1 <- randomForest(SalePrice ~ MSSubClass+LotArea+BsmtUnfSF+
+                    X1stFlrSF+X2ndFlrSF+GarageCars+
+                    WoodDeckSF + OverallQual + OverallCond +
+                    YearBuilt + BldgType, 
+                    data=training, na.action = na.roughfix)
+
+# Predict using the test set
+prediction <- predict(model_1, testing)
+model_output <- cbind(testing, prediction)
+
+# Log the sales price
+model_output$log_prediction <- log(model_output$prediction)
+model_output$log_SalePrice <- log(model_output$SalePrice)
+
+#Test with RMSE
+rmse(model_output$log_SalePrice, model_output$log_prediction)
+```
+
+```{r}
+# Predict using the test set and original linear model
+prediction2 <- predict(lm_model_15, testing)
+model_output2 <- cbind(testing, prediction2)
+
+# Log the sales price
+model_output2$log_prediction <- log(model_output2$prediction)
+model_output2$log_SalePrice <- log(model_output2$SalePrice)
+
+#Test with RMSE
+rmse(model_output2$log_SalePrice, model_output2$log_prediction)
+```
+
+```{r}
+# Predict using the random forest model
+pred <- predict(object = model_1, newdata = test_df, na.action = na.roughfix)
+
+# Check that the number of predictions is the same as the number of rows in 'test_df'
+pred %>% length()
+test_df %>% nrow()
+
+# Create the submission dataset
+submit_df = data.frame(
+    Id = test_df$Id,
+    SalePrice = pred
+)
+
+# Calculate the median of the column excluding NA values
+median_value <- median(submit_df$SalePrice, na.rm = TRUE)
+
+# Replace NA values with the median
+submit_df$SalePrice[is.na(submit_df$SalePrice)] <- median_value
+
+# View the first few lines of the dataset
+head(submit_df)
+
+# Save the datset
+write_csv(x = submit_df, file = "Will_Project_000_submit2.csv")
+```
+

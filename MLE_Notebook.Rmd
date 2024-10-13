@@ -1,0 +1,125 @@
+---
+title: "Maximum Likelihood Estimation"
+output: html_notebook
+---
+
+```{r setup, include=FALSE, warning=FALSE, message=FALSE, error=FALSE}
+setwd("C:/Users/justg/Dropbox (University of Oregon)")
+library(tidyverse)
+```
+
+# Intuition
+
+Maximum Likelihood Estimation (MLE) is a method for estimating the parameters of an assumed model by maximizing the likelihood function, which measures how likely it is to observe the given data under various parameter values. MLE aims to find the parameter values that make the observed data most probable, thereby identifying the distribution that is most likely, given our observed data. Simply put, MLE seeks to find the most likely distribution given the data.
+
+## Probability Density Function (PDF)
+
+An important part of MLE is the probability density function (PDF); it will play a key role in the construction of the likelihood function so it needs to be understood before moving on. The probability of a continuous variable X equaling any specific number is essentially zero (ex. chances of getting exactly 2 are very low given that it could be 2.001 or 1.9999). The PDF helps because it is a function of the distribution of a continuous variable, which means that the probability the variable is in a certain range can be calculated. The probability that X falls between a certain range can be calculated using taking an indefinite integral of the PDF.
+
+The following is the PDF of a continuous random variable X with a normal distribution.
+
+$$f(X) = \frac{1}{\sqrt{2\pi\sigma^2}} \exp \left( -\frac{(X - \mu)^2}{2\sigma^2} \right)$$
+
+Here is a visual representation of a probability density function of a normal distribution of values between 0.5 and 2, with a mean of 0 and standard deviation of 1. The total area under the curve is equal to 1 and the red shaded area would be the probability X falls between 0.5 and 2.
+
+```{r Normal distribution PDF graphic}
+ggplot() +
+  stat_function(fun = dnorm, geom = "line") +
+  stat_function(fun = dnorm, geom = "area",
+  fill = "red", xlim = c(0.5, 2)) + xlim(-5, 5) +
+  theme_bw()
+  
+```
+
+## Likelihood Function
+
+The normal distribution PDF produced two parameters, $\mu$ and $\sigma$, that can now be estimated using the likelihood function. The likelihood function will show which parameter values make the observed data the most probable. The likelihood function, L(X), will show the joint probabilities of our observed data points.
+
+The likelihood function is given by:
+
+$$ L(\theta) = \prod_{i=1}^{n} f(x_i; \theta) $$
+
+An example is provided to help develop the intuition and understanding of the likelihood function. Imagine there is a gymnastics competition with judges scoring a particular gymnast anywhere between 0 and 10. Three judges have been randomly pulled who gave scores of $x=6$, $x=7$, and $x=9$, the data is normally distributed and the standard deviation is $\sigma = 1$ for simplicity.
+
+The likelihood function in this case would be $$L(6,7,9) = f(6)*f(7)*f(9))$$
+
+or
+
+$$ 
+L(6,7,9) = \left( \frac{1}{\sqrt{2\pi}} \exp \left( -\frac{(6 - \mu)^2}{2} \right) \right) \cdot \left( \frac{1}{\sqrt{2\pi}} \exp \left( -\frac{(7 - \mu)^2}{2} \right) \right) \cdot \left( \frac{1}{\sqrt{2\pi}} \exp \left( -\frac{(9 - \mu)^2}{2} \right) \right) 
+$$
+
+This then simplifies to
+
+$$
+L(6,7,9) = \frac{1}{(2\pi)^{3/2}} \exp \left( -\frac{(6 - \mu)^2 + (7 - \mu)^2 + (9 - \mu)^2}{2} \right)
+$$
+
+Taking the log of this results in the log-likelihood function which will make the maximum likelihood estimation easier.
+
+$$
+\log L(6,7,9) = -\frac{3}{2} \log(2\pi) - \frac{(6 - \mu)^2 + (7 - \mu)^2 + (9 - \mu)^2}{2}
+$$
+
+## Maximum Likelihood
+
+After covering PDF and the likelihood function, it is now clear that what MLE is doing is simply maximizing the parameters of the likelihood function ($\mu$). In this case, the parameter is simply the average score but this shows how powerful MLE can be used when trying to maximize a models parameters (such as $\beta_0$ or $\beta_1$).
+
+To finish the example with the gymnast judge's scores, differentiate the log-likelihood function with respect to the parameter ($\mu$) and set to zero.
+
+This will simplify to
+
+$$
+22 - 3\mu = 0 \implies 3\mu = 22 \implies \mu = \frac{22}{3} \implies \mu = 7.\overline{3}
+$$
+
+which confirms that the mean is equal to 7.333.
+
+The next section will focus on applications of MLE now that the intuition and mechanisms of it have been understood.
+
+## MLE Example
+
+Below is an extension of the above example done in R code. We now take a random sample of 100 judges from the population with a true mean of 7 and true standard deviation of 0.75. The log-likelihood function is constructed and then used in the optimization function. fnsacale = -1 in the optim() function to make it a maximization problem as optim() uses minimizaiton optimization by default. The results show that MLE provides a very close estimation for the mean and standard deviation, only off by ~0.03 for the true mean and ~0.01 for the true standard deviation.
+
+```{r}
+# Set seed
+set.seed(1821)
+
+# Generate sample data
+data <- rnorm(100, mean = 7, sd = 1)
+
+
+# Make log-likelihood function
+log_likelihood <- function(params, data) {
+  mu <- params[1]
+  sigma <- params[2]
+  n <- length(data)
+  logL <- -n/2 * log(2 * pi * sigma^2) - sum((data - mu)^2) / (2 * sigma^2)
+  return(logL) # Log-likelihood
+}
+
+# Specify parameter guesses
+initial_params <- c(mean(data), sd(data))
+
+# Perform maximization
+result <- optim(par = initial_params, fn = log_likelihood, data = data, control = list(fnscale = -1))
+
+# Extract the estimated parameters
+estimated_params <- result$par
+
+# Display the estimated parameters
+estimated_params
+```
+
+# Applications
+
+## Logistic Regression
+
+MLE maximizes parameters to best fit the given data. So how can MLE be used to draw out useful insights? One common use is in logistic regression, which models the probability of a discrete outcome given input variables. This does slightly change the way MLE was used in the previous section with continuous data. In the case of discrete data, MLE uses a probability mass function (PMF) instead of PDF, otherwise the process and logic behind MLE with discrete outcomes are the same.
+
+Logistic regression generally uses binary outcomes and does a much better job of predicting these outcomes compared to linear regression. The coefficients of a logistic regression should be interpreted as a one unit increase in X correlates to a $\beta_1$ change in log odds of the outcome. Along with the intercept ($\beta_0$) the model can then classify data points into either outcome group (0 or 1) based on which one is closest for each data point.
+
+
+## Poisson Regression
+
+MLE is also used in poisson regression because of how well it handles count data as opposed to OLS. Similar to logistic regression, MLE works the same as in our continuous example but assumes a poisson distribution with a mean of $\lambda$ that is related to the explanatory variables. This means that the likelihood function will not use the normal distribution PDF function that was provided earlier but instead use Poisson probabilities for each observation.

@@ -1,0 +1,402 @@
+---
+title: "Project-003"
+author: "William Grossman"
+date: "2024-05-22"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+setwd("C:/Users/justg/Dropbox (University of Oregon)")
+
+library(palmerpenguins)
+library(tidymodels)
+library(skimr)
+```
+
+```{r skim data}
+
+skim(penguins)
+
+```
+
+## Question 0.1
+We have 3 different species in the data set and 2 are balanced while 1 is not. Chinstrap are a good deal lower with only 68 compared to 124 Gentoo and 152 Adelie.
+
+
+## Question 0.2
+Imputation is a way of handling missing values in our data, usually when we fill in missing values in our data using some method to estimate what that missing value might be. The most simple way to do this is to use mean imputation where we simply apply the mean value of a variable to missing observations or mode imputation when its a factor variable and taking means are impossible.
+
+
+## Question 0.3
+```{r impute by hand using median and mode}
+# Check mean of numeric rows
+median_blength <- median(penguins$bill_length_mm, na.rm = TRUE)
+median_bdepth <- median(penguins$bill_depth_mm, na.rm = TRUE)
+median_flength <- median(penguins$flipper_length_mm, na.rm = TRUE)
+median_bmass <- median(penguins$body_mass_g, na.rm = TRUE)
+
+# Replace NA values with our medians
+penguins$bill_length_mm <- ifelse(is.na(penguins$bill_length_mm), median_blength, penguins$bill_length_mm)
+penguins$bill_depth_mm <- ifelse(is.na(penguins$bill_depth_mm), median_bdepth, penguins$bill_depth_mm)
+penguins$flipper_length_mm <- ifelse(is.na(penguins$flipper_length_mm), median_flength, penguins$flipper_length_mm)
+penguins$body_mass_g <- ifelse(is.na(penguins$body_mass_g), median_bmass, penguins$body_mass_g)
+
+# Replace factor variables with mode (skim showed that male was the mode)
+mode_sex <- as.factor("male")
+penguins$sex <- ifelse(is.na(penguins$sex), mode_sex, penguins$sex)
+
+# Skim to make sure we replaced all NAs
+skim(penguins)
+```
+
+
+## Question 0.4
+```{r use tidymodels recipe to impute the median}
+#Reload penguin database
+data("penguins")
+# Make recipe to impute missing numeric and factor values
+penguin_recipe <- recipe(species ~ ., data = penguins) %>% 
+  step_impute_median(all_numeric_predictors()) %>% 
+  step_impute_mode(all_factor_predictors())
+
+# Prep and bake using recipe
+penguin_prep <- penguin_recipe %>% prep()
+penguin_bake <- penguin_prep %>% bake(new_data = NULL)
+
+# Check that all NAs have been imputed
+skim(penguin_bake)
+```
+
+## Question 0.5:
+To be more sophisticated with our imputation we could have predicted the values based on all the other data we had in our data set. For example, we could have predicted sex based off body mass, flipper length, bill length, etc. These characteristics are generally dependent on the sex of the animal so this would have probably been a more accurate imputation then simply guessing the mode for all values.
+
+
+# Part 1
+
+
+## Question 1.1
+There are 3 possible splits for each of the 3 islands, Biscoe versus non-Biscoe, Dream vs non-Dream, and Torgersen vs non-Torgersen.
+
+## Question 1.2
+accuracy and gini for each split (A vs BC, B vs AC)
+```{r try different splits for islands, message=FALSE, error=FALSE, warning=FALSE}
+library(collapse)
+
+islands <- penguin_bake$island %>% unique()
+
+results <- lapply(X = islands, FUN = function(i) {
+  # Filter groups
+  grp1 <- penguins %>% filter(island == i)
+  grp2 <- penguins %>% filter(island != i)
+
+  # Find the modal species in each group
+  species1 <- grp1$species %>% fmode()
+  species2 <- grp2$species %>% fmode()
+
+  # Calculate accuracy
+  accuracy1 <- fmean(grp1$species == species1)
+  accuracy2 <- fmean(grp2$species == species2)
+
+  # Calculate gini
+  g1 <- grp1$species %>% table() %>% prop.table() # Proportions of each species on this island
+  g2 <- grp2$species %>% table() %>% prop.table()
+
+  gini1 <- sum(g1 * (1 - g1)) # Lower gini the better
+  gini2 <- sum(g1 * (1 - g2))
+
+  average_gini <- (gini1 + gini2) / 2 # Average gini for this split
+  
+  # Return both accuracy and average gini
+  list(
+    island = i,
+    subject_island_accuracy = accuracy1,
+    other_islands_accuracy = accuracy2,
+    average_gini = average_gini
+  )
+})
+
+results
+
+```
+
+
+## Question 1.3
+```{r try different splits for sex, message=FALSE, error=FALSE, warning=FALSE}
+library(collapse)
+
+sex <- penguin_bake$sex %>% unique()
+
+results2 <- lapply(X = sex, FUN = function(i) {
+  # Filter groups
+  grp1 <- penguins %>% filter(sex == i)
+  grp2 <- penguins %>% filter(sex != i)
+
+  # Find the modal species in each group
+  species1 <- grp1$species %>% fmode()
+  species2 <- grp2$species %>% fmode()
+
+  # Calculate accuracy
+  accuracy1 <- fmean(grp1$species == species1)
+  accuracy2 <- fmean(grp2$species == species2)
+
+  # Calculate gini
+  g1 <- grp1$species %>% table() %>% prop.table() # Proportions of each species on this island
+  g2 <- grp2$species %>% table() %>% prop.table()
+
+  gini1 <- sum(g1 * (1 - g1)) # Lower gini the better
+  gini2 <- sum(g1 * (1 - g2))
+
+  average_gini <- (gini1 + gini2) / 2 # Average gini for this split
+  
+  # Return both accuracy and average gini
+  list(
+    sex = i,
+    subject_sex_accuracy = accuracy1,
+    other_sex_accuracy = accuracy2,
+    average_gini = average_gini
+  )
+})
+
+results2
+
+```
+
+## Question 1.4
+Given the two short trees that we made, I would use the island variable and I would split on the Torgersen island. On this split we actually had a 100% accuracy for Torgersen becuase all Adelie penguins are on that island. However, our non-Torgersen split did perform poorly with only a 42 percent accuracy, but we are at least able to distinguish one type of penguin with certainty with this split.
+
+
+
+## Question 1.5
+To evaluate the best split for bill lengths we could try splitting the data at each unique value for bill lengths. This would require a split for each distinct bill length against every other bill length and test which split has the best accuracy or gini index.
+
+
+# Part 2
+
+
+## Question 2.1
+
+
+```{r Make decision tree model}
+set.seed(1444)
+
+# Define the decision tree model
+tree_spec <- decision_tree(
+  cost_complexity = tune(),
+  tree_depth = 2) %>%
+  set_mode("classification") %>%
+  set_engine("rpart")
+
+# Combine the recipe and model into a workflow
+penguin_workflow <- workflow() %>%
+  add_recipe(penguin_recipe) %>%
+  add_model(tree_spec)
+
+# Set up cross-validation
+penguins_folds <- vfold_cv(penguins, v = 5, strata = species)
+
+# Tune the model
+tree_grid <- grid_regular(cost_complexity(), levels = 10)
+
+# Perform tuning
+tune_results <- tune_grid(
+  penguin_workflow,
+  resamples = penguins_folds,
+  grid = tree_grid,
+  metrics = metric_set(accuracy)
+)
+
+# Select the best parameters
+best_tree <- select_best(tune_results, metric = "accuracy")
+
+# Finalize the workflow with the best parameters
+final_workflow <- penguin_workflow %>%
+  finalize_workflow(best_tree)
+
+# Fit the final model on the entire dataset
+final_fit <- final_workflow %>%
+  fit(data = penguins)
+
+# Make predictions on the entire dataset
+predictions <- final_fit %>%
+  predict(new_data = penguins)
+
+# Evaluate the final model on the entire dataset
+metrics <- predictions %>%
+  bind_cols(penguins) %>%
+  metrics(truth = species, estimate = .pred_class)
+
+# Print the metrics
+metrics
+
+
+```
+
+
+## Question 2.2
+```{r Check how much pruning was needed for best model}
+best_tree
+
+```
+The best tree had a very low cost cost complexity meaning that very little pruning was needed for the decision tree to be so accurate.
+
+
+# Part 3
+
+
+## Question 3.1
+To get our decision trees from part 1 closer to a random forest we could have the model be introduced to random variables at each split. So when we did our 3 splits for the islands, instead of giving every split all of our variables, we could have randomly given them different predictor variables from our data. We would want further splits within each tree to also randomize the features that it has access to as well.
+
+
+## Question 3.2
+
+```{r Tune a random forest model}
+library(ranger)
+
+set.seed(1444)
+
+# Split the data into training and testing sets
+penguins_split <- initial_split(penguins, prop = 0.8, strata = species)
+penguins_train <- training(penguins_split)
+penguins_test <- testing(penguins_split)
+
+# Define a recipe with imputation steps
+penguin_recipe <- recipe(species ~ ., data = penguins_train) %>%
+  step_impute_median(all_numeric_predictors()) %>%
+  step_impute_mode(all_nominal_predictors())
+
+# Define the random forest model with tunable parameters
+rf_spec <- rand_forest(
+  mtry = tune(),       # Number of variables randomly sampled at each split
+  trees = tune(),      # Number of trees in the forest
+  min_n = tune()       # Minimum number of data points in a node to attempt a split
+) %>%
+  set_mode("classification") %>%
+  set_engine("ranger")
+
+# Combine the recipe and model into a workflow
+rf_workflow <- workflow() %>%
+  add_recipe(penguin_recipe) %>%
+  add_model(rf_spec)
+
+# Set up cross-validation
+penguins_folds <- vfold_cv(penguins_train, v = 5, strata = species)
+
+# Define a grid for tuning
+rf_grid <- grid_random(
+  mtry(range = c(1, ncol(penguins_train) - 1)),
+  trees(range = c(100, 500)),
+  min_n(range = c(1, 10)),
+  size = 20
+)
+
+# Perform tuning
+tune_results <- tune_grid(
+  rf_workflow,
+  resamples = penguins_folds,
+  grid = rf_grid,
+  metrics = metric_set(accuracy)
+)
+
+# Select the best parameters based on accuracy
+best_rf <- select_best(tune_results, metric = "accuracy")
+
+# Finalize the workflow with the best parameters
+final_rf_workflow <- rf_workflow %>%
+  finalize_workflow(best_rf)
+
+# Fit the final model on the training data
+final_rf_fit <- final_rf_workflow %>%
+  fit(data = penguins_train)
+
+# Make predictions on the test set
+rf_predictions <- final_rf_fit %>%
+  predict(new_data = penguins_test)
+
+# Evaluate the final model on the test set
+rf_metrics <- rf_predictions %>%
+  bind_cols(penguins_test) %>%
+  metrics(truth = species, estimate = .pred_class)
+
+# Print the test metrics
+rf_metrics
+```
+
+The relevant metrics that I tuned for the random forest model are the number of predictors that will be randomly sampled at each split, the number of trees in each ensemble, and the number of trees in the ensemble.
+
+## Question 3.3
+```{r Update imputation method to some more complex}
+library(recipes)
+set.seed(1444)
+
+# Split the data into training and testing sets
+penguins_split <- initial_split(penguins, prop = 0.8, strata = species)
+penguins_train <- training(penguins_split)
+penguins_test <- testing(penguins_split)
+
+# Define an updated recipe with random forest imputation steps
+rf_impute_recipe <- recipe(species ~ ., data = penguins_train) %>%
+  step_impute_bag(all_predictors(), -all_outcomes())
+
+# Define the random forest model
+rf_spec_rf_impute <- rand_forest(
+  mtry = tune(),      
+  trees = tune(),      
+  min_n = tune()       
+) %>%
+  set_mode("classification") %>%
+  set_engine("ranger")
+
+# Combine the updated recipe and model into a workflow
+rf_workflow_rf_impute <- workflow() %>%
+  add_recipe(rf_impute_recipe) %>%
+  add_model(rf_spec_rf_impute)
+
+# Set up cross-validation
+penguins_folds <- vfold_cv(penguins_train, v = 5, strata = species)
+
+# Define a grid for tuning
+rf_grid <- grid_random(
+  mtry(range = c(1, ncol(penguins_train) - 1)),
+  trees(range = c(100, 500)),
+  min_n(range = c(1, 10)),
+  size = 20
+)
+
+# Perform tuning
+tune_results_rf_impute <- tune_grid(
+  rf_workflow_rf_impute,
+  resamples = penguins_folds,
+  grid = rf_grid,
+  metrics = metric_set(accuracy)
+)
+
+# Select the best parameters based on accuracy
+best_rf_rf_impute <- select_best(tune_results_rf_impute, metric = "accuracy")
+
+# Finalize the workflow with the best parameters
+final_rf_workflow_rf_impute <- rf_workflow_rf_impute %>%
+  finalize_workflow(best_rf_rf_impute)
+
+# Fit the final model on the training data
+final_rf_fit_rf_impute <- final_rf_workflow_rf_impute %>%
+  fit(data = penguins_train)
+
+# Make predictions on the test set
+rf_predictions_rf_impute <- final_rf_fit_rf_impute %>%
+  predict(new_data = penguins_test)
+
+# Evaluate the final model on the test set
+rf_metrics_rf_impute <- rf_predictions_rf_impute %>%
+  bind_cols(penguins_test) %>%
+  metrics(truth = species, estimate = .pred_class)
+
+# Print the test metrics
+rf_metrics_rf_impute
+```
+
+## Question 3.4
+Using a bagged approach for imputation did not affect my random forest model's accuracy from the 98.5% it had using the median and modal imputation. This might be the case because their were only a few missing data points in the data and median and modal imputation might have done a well enough job that our random forest model did not make different classification decisions based on the different imputation methods. 
+
+
+# Question 3.5
+It might be important to include imputation in cross validation because then the model has a chance to cross validate it's imputation rather than taking that step at the beginning and imposing those results on all cross validation after the fact. If imputation is included in cross validation then those missing data have a chance to be apart of the training and testing data several times to test the performance and get a better estimate.
